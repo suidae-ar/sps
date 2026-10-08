@@ -1,5 +1,7 @@
 # S5Sim – Simulator für SIMATIC-S5-Programme (AWL)
 
+Dokumentation: [Programmbeschreibung](docs/beschreibung.md) · [Handbuch](docs/handbuch.md)
+
 Desktop-Simulator für STEP-5-Programme in Anweisungsliste, gebaut mit C++20 und Qt 6.
 
 ## Bauen und starten
@@ -18,9 +20,17 @@ open build/S5Sim.app
 | Verzeichnis | Inhalt |
 |---|---|
 | `core/` | Kern ohne Qt: `parser` (AWL → Bausteine), `cpu` (Zyklus, VKE, AKKU, Zeiten, Zähler, DBs), `mc5` (Assembler/Disassembler MC5) |
-| `gui/` | Qt-Oberfläche: Editor mit Status-Spalte, E/A-Panel, Variablentabelle |
+| `gui/` | Qt-Oberfläche: Baugruppenträger (CPU, E/A-Baugruppen), Editor mit Status-Spalte, Variablentabelle, Maschinencode |
 | `examples/` | Beispielprogramme (auch im Menü *Datei → Beispiele*) |
 | `tests/` | Tests für Parser und CPU |
+
+## Oberfläche
+
+- **Baugruppenträger** (Hauptfenster) im Stil der S5-115U: CPU mit Betriebsartenschalter RUN/STOP,
+  Urlöschen-Taster (nur im STOP), LEDs RUN/STOP/STÖRUNG und PG-Taster, der den Editor öffnet
+- **Digitalein- und -ausgaben** DE/DA mit 8, 16 oder 32 Bit stecken, ziehen und verschieben; Bits senkrecht mit
+  grünen Status-LEDs, Eingaben mit Kippschaltern oder Tastern; Anfangsadresse je Baugruppe einstellbar
+- **Editor (PG)** als eigenes Fenster: AWL mit Status Baustein, Einzelschritt, Variablen, Meldungen, Maschinencode
 
 ## Was die CPU kann
 
@@ -59,5 +69,5 @@ Gleitpunkt, Alarme/Weckalarm-OBs, KOP/FUP-Darstellung, Haltepunkte.
 ## Entwickleroptionen
 
 ```sh
-S5Sim --example 5 --inputs 0.0 --run --screenshot bild.png --delay 2000
+S5Sim --example 5 --inputs 0.0 --run --screenshot rack.png --screenshot-editor editor.png --delay 2000
 ```
