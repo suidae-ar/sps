@@ -1,14 +1,14 @@
+// Editorfenster ("Programmiergerät"): AWL-Editor, Status, Variablen, Maschinencode.
 #pragma once
 
 #include "cpu.h"
 #include "mc5.h"
 
-#include <QElapsedTimer>
 #include <QMainWindow>
 
 class CodeEditor;
-class IoPanel;
 class Mc5View;
+class PlcController;
 class QDockWidget;
 class QAction;
 class QLabel;
@@ -19,14 +19,17 @@ class WatchPanel;
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
-    MainWindow();
+    explicit MainWindow(PlcController* plc);
 
-    // auch für Entwickleroptionen (--example, --run, --step) genutzt
     void loadExample(int index);
-    void runCpu();
-    void stepCpu();
-    s5::Cpu& cpu() { return cpu_; }
     void showMc5View();
+    bool maybeSave();
+    void saveWindowState() const;
+    s5::mc5::CpuFamily family() const { return family_; }
+
+signals:
+    void familyChanged();
+    void showRackRequested();
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -37,17 +40,13 @@ private:
 
     bool compile();
     bool needsCompile() const;
-    void stopCpu();
-    void resetCpu();
-    void onCycleTimer();
     void refreshUi();
-    void handleCpuError();
+    void onRuntimeError(const QString& message, int line);
 
     void newFile();
     void openFile();
     bool saveFile();
     bool saveFileAs();
-    bool maybeSave();
     void loadText(const QString& text, const QString& path);
     bool loadFile(const QString& path);
     void updateTitle();
@@ -57,9 +56,8 @@ private:
     void showHelp();
     void showAbout();
 
-    s5::Cpu cpu_;
+    PlcController* plc_;
     CodeEditor* editor_;
-    IoPanel* ioPanel_;
     WatchPanel* watch_;
     QListWidget* messages_;
     Mc5View* mc5View_;
@@ -73,11 +71,7 @@ private:
     QAction* stepAct_;
     QAction* statusAct_;
 
-    QTimer* cycleTimer_;
     QTimer* uiTimer_;
-    QElapsedTimer clock_;
-    qint64 lastTickMs_ = 0;
-    double cycleTimeMs_ = 0;
 
     QString currentFile_;
     int compiledRevision_ = -1;

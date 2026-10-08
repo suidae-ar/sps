@@ -2,7 +2,7 @@
 ;  Zähler und Vergleicher: Kartonabfüllung
 ;  E 0.0 = Lichtschranke (vorwärts zählen)    E 0.1 = Teil entnommen (rückwärts)
 ;  E 0.2 = Zähler auf Vorgabe 5 setzen         E 0.3 = Zähler rücksetzen
-;  E 0.0 am besten als Taster schalten (Häkchen "Taster" im E/A-Panel)
+;  E 0.0 am besten als Taster (Rechtsklick auf die Eingabekarte → Taster statt Schalter)
 ; =====================================================================
 
 OB 1

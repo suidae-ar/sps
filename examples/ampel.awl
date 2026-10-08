@@ -1,6 +1,6 @@
 ; =====================================================================
 ;  Fußgängerampel als Schrittkette
-;  E 0.0 = Anforderungstaster (Häkchen "Taster" setzen)
+;  E 0.0 = Anforderungstaster (Eingabekarte: Rechtsklick → Taster statt Schalter)
 ;  Auto:       A 0.0 rot   A 0.1 gelb   A 0.2 grün
 ;  Fußgänger:  A 1.0 rot   A 1.1 grün
 ;  Schritte:   M 10.0 .. M 10.3

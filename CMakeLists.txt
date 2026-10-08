@@ -38,7 +38,9 @@ if(Qt6_FOUND)
         gui/mainwindow.cpp gui/mainwindow.h
         gui/codeeditor.cpp gui/codeeditor.h
         gui/awlhighlighter.cpp gui/awlhighlighter.h
-        gui/iopanel.cpp gui/iopanel.h
+        gui/plccontroller.cpp gui/plccontroller.h
+        gui/rackmodules.cpp gui/rackmodules.h
+        gui/rackwindow.cpp gui/rackwindow.h
         gui/watchpanel.cpp gui/watchpanel.h
         gui/format.cpp gui/format.h
         gui/mc5view.cpp gui/mc5view.h

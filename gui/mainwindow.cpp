@@ -2,7 +2,7 @@
 
 #include "awlhighlighter.h"
 #include "codeeditor.h"
-#include "iopanel.h"
+#include "plccontroller.h"
 #include "mc5view.h"
 #include "parser.h"
 #include "watchpanel.h"
@@ -21,7 +21,6 @@
 #include <QListWidget>
 #include <QMenuBar>
 #include <QMessageBox>
-#include <QScrollArea>
 #include <QSettings>
 #include <QStatusBar>
 #include <QTextBrowser>
@@ -54,33 +53,45 @@ QString readResource(const QString& path)
 
 }  // namespace
 
-MainWindow::MainWindow()
+MainWindow::MainWindow(PlcController* plc)
+    : plc_(plc)
 {
     editor_ = new CodeEditor(this);
     const bool dark = palette().color(QPalette::Window).lightness() < 128;
     new AwlHighlighter(editor_->document(), dark);
     setCentralWidget(editor_);
 
-    cycleTimer_ = new QTimer(this);
-    cycleTimer_->setTimerType(Qt::PreciseTimer);
-    cycleTimer_->setInterval(10);
-    connect(cycleTimer_, &QTimer::timeout, this, &MainWindow::onCycleTimer);
-
     uiTimer_ = new QTimer(this);
     uiTimer_->setInterval(50);
     connect(uiTimer_, &QTimer::timeout, this, &MainWindow::refreshUi);
     uiTimer_->start();
-    clock_.start();
 
     createDocks();
     createActions();
+
+    // Geändertes Programm vor dem Neuanlauf übersetzen (auch beim Start über den CPU-Schalter)
+    plc_->setPrepareHook([this] { return !needsCompile() || compile(); });
+    connect(plc_, &PlcController::started, this, [this](bool halted) {
+        messages_->addItem(halted ? tr("Neuanlauf im Einzelschritt") : tr("Neuanlauf – CPU in RUN"));
+        messages_->scrollToBottom();
+    });
+    connect(plc_, &PlcController::resetDone, this, [this] {
+        editor_->clearLineStatus();
+        messages_->addItem(tr("Urlöschen ausgeführt"));
+    });
+    connect(plc_, &PlcController::runtimeError, this, &MainWindow::onRuntimeError);
+    connect(plc_, &PlcController::stateChanged, this, [this] {
+        const bool halted = plc_->cpu().state() == s5::CpuState::Halt;
+        editor_->setExecutionLine(halted ? plc_->cpu().currentLine() : -1);
+        refreshUi();
+    });
 
     cycleLabel_ = new QLabel;
     statusBar()->addPermanentWidget(cycleLabel_);
 
     connect(editor_->document(), &QTextDocument::modificationChanged, this, &MainWindow::updateTitle);
     connect(editor_->document(), &QTextDocument::contentsChanged, this, [this] {
-        if (cpu_.state() != s5::CpuState::Stop && needsCompile())
+        if (plc_->cpu().state() != s5::CpuState::Stop && needsCompile())
             statusBar()->showMessage(tr("Programm geändert – mit „Übersetzen“ (⌘B) in die CPU laden"));
     });
 
@@ -103,16 +114,6 @@ MainWindow::MainWindow()
 
 void MainWindow::createDocks()
 {
-    ioPanel_ = new IoPanel(&cpu_);
-    auto* scroll = new QScrollArea;
-    scroll->setWidget(ioPanel_);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    auto* ioDock = new QDockWidget(tr("E/A-Panel"), this);
-    ioDock->setObjectName(QStringLiteral("ioDock"));
-    ioDock->setWidget(scroll);
-    addDockWidget(Qt::RightDockWidgetArea, ioDock);
-
     watch_ = new WatchPanel;
     auto* watchDock = new QDockWidget(tr("Variablen"), this);
     watchDock->setObjectName(QStringLiteral("watchDock"));
@@ -138,8 +139,8 @@ void MainWindow::createDocks()
         if (line > 0) editor_->gotoLine(line);
     });
 
-    resize(1400, 900);
-    resizeDocks({ioDock}, {540}, Qt::Horizontal);
+    resize(1300, 860);
+    resizeDocks({watchDock}, {420}, Qt::Horizontal);
     resizeDocks({msgDock}, {160}, Qt::Vertical);
 }
 
@@ -165,15 +166,15 @@ void MainWindow::createActions()
         });
     }
     fileMenu->addSeparator();
-    fileMenu->addAction(tr("&Beenden"), QKeySequence::Quit, this, &QWidget::close);
+    fileMenu->addAction(tr("&Beenden"), QKeySequence::Quit, qApp, &QApplication::closeAllWindows);
 
     QMenu* cpuMenu = menuBar()->addMenu(tr("&CPU"));
     a = cpuMenu->addAction(tr("Ü&bersetzen und laden"), QKeySequence(Qt::CTRL | Qt::Key_B), this, [this] { compile(); });
     tb->addAction(a);
     tb->addSeparator();
-    runAct_ = cpuMenu->addAction(tr("&RUN"), QKeySequence(Qt::Key_F5), this, &MainWindow::runCpu);
-    stopAct_ = cpuMenu->addAction(tr("&STOP"), QKeySequence(Qt::SHIFT | Qt::Key_F5), this, &MainWindow::stopCpu);
-    stepAct_ = cpuMenu->addAction(tr("&Einzelschritt"), QKeySequence(Qt::Key_F10), this, &MainWindow::stepCpu);
+    runAct_ = cpuMenu->addAction(tr("&RUN"), QKeySequence(Qt::Key_F5), plc_, &PlcController::run);
+    stopAct_ = cpuMenu->addAction(tr("&STOP"), QKeySequence(Qt::SHIFT | Qt::Key_F5), plc_, &PlcController::stop);
+    stepAct_ = cpuMenu->addAction(tr("&Einzelschritt"), QKeySequence(Qt::Key_F10), plc_, &PlcController::step);
     runAct_->setToolTip(tr("CPU starten (F5)"));
     stopAct_->setToolTip(tr("CPU anhalten (⇧F5)"));
     stepAct_->setToolTip(tr("Eine Anweisung ausführen (F10)"));
@@ -195,10 +196,11 @@ void MainWindow::createActions()
             family_ = f;
             QSettings().setValue(QStringLiteral("mc5/family"), static_cast<int>(f));
             updateMc5View();
+            emit familyChanged();
         });
     }
     cpuMenu->addSeparator();
-    a = cpuMenu->addAction(tr("&Urlöschen"), this, &MainWindow::resetCpu);
+    a = cpuMenu->addAction(tr("&Urlöschen"), plc_, &PlcController::reset);
     a->setToolTip(tr("Merker, Zeiten, Zähler und Datenbausteine löschen"));
     tb->addSeparator();
     tb->addAction(a);
@@ -217,6 +219,8 @@ void MainWindow::createActions()
     connect(hexAct, &QAction::toggled, editor_, &CodeEditor::setAkkuHex);
     viewMenu->addSeparator();
     for (QDockWidget* d : findChildren<QDockWidget*>()) viewMenu->addAction(d->toggleViewAction());
+    viewMenu->addSeparator();
+    viewMenu->addAction(tr("Baugruppen&träger"), QKeySequence(Qt::CTRL | Qt::Key_1), this, &MainWindow::showRackRequested);
 
     QMenu* helpMenu = menuBar()->addMenu(tr("&Hilfe"));
     helpMenu->addAction(tr("&Befehlsübersicht"), QKeySequence::HelpContents, this, &MainWindow::showHelp);
@@ -262,7 +266,7 @@ bool MainWindow::compile()
         ++blocks;
         instr += static_cast<int>(b.code.size());
     }
-    cpu_.load(r.program);
+    plc_->cpu().load(r.program);
     watch_->setProgram(r.program);
     updateMc5View();
     editor_->clearLineStatus();
@@ -273,107 +277,26 @@ bool MainWindow::compile()
     return true;
 }
 
-void MainWindow::runCpu()
+void MainWindow::onRuntimeError(const QString& msg, int line)
 {
-    if (needsCompile() && !compile()) return;
-    if (cpu_.state() == s5::CpuState::Stop) {
-        if (!cpu_.start()) {
-            handleCpuError();
-            return;
-        }
-        messages_->addItem(tr("Neuanlauf – CPU in RUN"));
-    } else {
-        cpu_.setHalted(false);
+    editor_->setExecutionLine(-1);
+    if (msg.isEmpty()) return;
+    auto* item = new QListWidgetItem(line > 0 ? tr("STOP in Zeile %1: %2").arg(line).arg(msg) : tr("STOP: %1").arg(msg));
+    item->setData(Qt::UserRole, line);
+    item->setForeground(QColor(0xd0, 0x30, 0x30));
+    messages_->addItem(item);
+    messages_->scrollToBottom();
+    if (line > 0) {
+        editor_->setErrorLines({line});
+        editor_->gotoLine(line);
     }
-    editor_->setExecutionLine(-1);
-    lastTickMs_ = clock_.elapsed();
-    cycleTimer_->start();
-    refreshUi();
-}
-
-void MainWindow::stopCpu()
-{
-    cycleTimer_->stop();
-    if (cpu_.state() != s5::CpuState::Stop) messages_->addItem(tr("CPU in STOP"));
-    cpu_.stop();
-    editor_->setExecutionLine(-1);
-    refreshUi();
-}
-
-void MainWindow::stepCpu()
-{
-    if (cpu_.state() == s5::CpuState::Stop) {
-        if (needsCompile() && !compile()) return;
-        if (!cpu_.start(true)) {
-            handleCpuError();
-            return;
-        }
-        messages_->addItem(tr("Neuanlauf im Einzelschritt"));
-        lastTickMs_ = clock_.elapsed();
-    } else if (cpu_.state() == s5::CpuState::Run) {
-        cycleTimer_->stop();
-        cpu_.setHalted(true);
-    } else {
-        const qint64 now = clock_.elapsed();
-        cpu_.tick(static_cast<int>(now - lastTickMs_));
-        lastTickMs_ = now;
-        cpu_.step();
-        if (cpu_.state() == s5::CpuState::Stop) {
-            handleCpuError();
-            return;
-        }
-    }
-    editor_->setExecutionLine(cpu_.currentLine());
-    refreshUi();
-}
-
-void MainWindow::resetCpu()
-{
-    cycleTimer_->stop();
-    cpu_.resetMemory();
-    editor_->setExecutionLine(-1);
-    editor_->clearLineStatus();
-    messages_->addItem(tr("Urlöschen ausgeführt"));
-    refreshUi();
-}
-
-void MainWindow::onCycleTimer()
-{
-    const qint64 now = clock_.elapsed();
-    cpu_.tick(static_cast<int>(now - lastTickMs_));
-    lastTickMs_ = now;
-
-    QElapsedTimer t;
-    t.start();
-    const bool ok = cpu_.runCycle();
-    cycleTimeMs_ = t.nsecsElapsed() / 1e6;
-    if (!ok) handleCpuError();
-}
-
-void MainWindow::handleCpuError()
-{
-    cycleTimer_->stop();
-    editor_->setExecutionLine(-1);
-    const QString msg = QString::fromStdString(cpu_.errorMessage());
-    if (!msg.isEmpty()) {
-        const int line = cpu_.errorLine();
-        auto* item = new QListWidgetItem(line > 0 ? tr("STOP in Zeile %1: %2").arg(line).arg(msg) : tr("STOP: %1").arg(msg));
-        item->setData(Qt::UserRole, line);
-        item->setForeground(QColor(0xd0, 0x30, 0x30));
-        messages_->addItem(item);
-        messages_->scrollToBottom();
-        if (line > 0) {
-            editor_->setErrorLines({line});
-            editor_->gotoLine(line);
-        }
-        statusBar()->showMessage(tr("CPU in STOP: %1").arg(msg));
-    }
-    refreshUi();
+    statusBar()->showMessage(tr("CPU in STOP: %1").arg(msg));
 }
 
 void MainWindow::refreshUi()
 {
-    const s5::CpuState st = cpu_.state();
+    const s5::Cpu& cpu = plc_->cpu();
+    const s5::CpuState st = cpu.state();
     QString text, color;
     switch (st) {
     case s5::CpuState::Stop: text = QStringLiteral("STOP"); color = QStringLiteral("#c62828"); break;
@@ -387,16 +310,16 @@ void MainWindow::refreshUi()
     runAct_->setEnabled(st != s5::CpuState::Run);
     stopAct_->setEnabled(st != s5::CpuState::Stop);
 
-    ioPanel_->refresh();
-    watch_->refresh(cpu_);
-    if (editor_->statusVisible() && st != s5::CpuState::Stop) editor_->setLineStatus(cpu_.lineStatus());
+    if (!isVisible()) return;
+    watch_->refresh(cpu);
+    if (editor_->statusVisible() && st != s5::CpuState::Stop) editor_->setLineStatus(cpu.lineStatus());
 
     if (st == s5::CpuState::Run)
         cycleLabel_->setText(tr("Zyklus %1   Bearbeitungszeit %2 ms")
-                                 .arg(cpu_.cycleCount())
-                                 .arg(cycleTimeMs_, 0, 'f', 3));
+                                 .arg(cpu.cycleCount())
+                                 .arg(plc_->cycleTimeMs(), 0, 'f', 3));
     else
-        cycleLabel_->setText(tr("Zyklus %1").arg(cpu_.cycleCount()));
+        cycleLabel_->setText(tr("Zyklus %1").arg(cpu.cycleCount()));
 }
 
 // ---------------------------------------------------------------- MC5
@@ -480,7 +403,7 @@ void MainWindow::importMc5()
         return;
     }
     const s5::mc5::DisassembleResult d = s5::mc5::disassemble(blocks);
-    stopCpu();
+    plc_->stop();
     loadText(QString::fromStdString(d.source), {});
     for (const auto& w : warnings) messages_->addItem(tr("Import: %1").arg(QString::fromStdString(w)));
     for (const auto& w : d.warnings) messages_->addItem(tr("Rückübersetzung: %1").arg(QString::fromStdString(w)));
@@ -492,7 +415,7 @@ void MainWindow::importMc5()
 void MainWindow::loadExample(int index)
 {
     if (index < 0 || index >= static_cast<int>(std::size(kExamples))) return;
-    stopCpu();
+    plc_->stop();
     loadText(readResource(QString::fromLatin1(kExamples[index].resource)), {});
 }
 
@@ -521,7 +444,7 @@ bool MainWindow::loadFile(const QString& path)
 void MainWindow::newFile()
 {
     if (!maybeSave()) return;
-    stopCpu();
+    plc_->stop();
     loadText(QStringLiteral("; Neues Programm\n\nOB 1\n:\n:BE\n"), {});
 }
 
@@ -531,7 +454,7 @@ void MainWindow::openFile()
     const QString path = QFileDialog::getOpenFileName(this, tr("AWL-Programm öffnen"), QFileInfo(currentFile_).path(),
                                                       tr("AWL-Quelltext (*.awl *.txt);;Alle Dateien (*)"));
     if (path.isEmpty()) return;
-    stopCpu();
+    plc_->stop();
     if (!loadFile(path)) QMessageBox::warning(this, tr("Öffnen"), tr("Datei konnte nicht gelesen werden:\n%1").arg(path));
 }
 
@@ -578,15 +501,17 @@ void MainWindow::updateTitle()
     setWindowModified(editor_->document()->isModified());
 }
 
-void MainWindow::closeEvent(QCloseEvent* e)
+void MainWindow::saveWindowState() const
 {
-    if (!maybeSave()) {
-        e->ignore();
-        return;
-    }
     QSettings s;
     s.setValue(QStringLiteral("window/geometry"), saveGeometry());
     s.setValue(QStringLiteral("window/state"), saveState());
+}
+
+void MainWindow::closeEvent(QCloseEvent* e)
+{
+    // Das Editorfenster wird nur ausgeblendet; beendet wird über den Baugruppenträger
+    saveWindowState();
     e->accept();
 }
 
@@ -688,6 +613,9 @@ zurück in AWL. Ergänzende Operationen (Sprünge auf Marken, Wortverknüpfungen
 sind wie bei STEP 5 nur im FB erlaubt; XF, :F und Datenbit-Verknüpfungen nur bei S5-135U/155U.</p>
 
 <h3>Bedienung</h3>
+<p>Das Hauptfenster ist der <b>Baugruppenträger</b>: CPU mit Betriebsartenschalter RUN/STOP, Urlöschen (nur im STOP)
+und PG-Taster zum Öffnen des Editors. Über den freien Steckplatz oder das Menü <i>Baugruppe</i> werden Digitalein-
+und -ausgaben (8/16/32 Bit) gesteckt; ein Rechtsklick ändert Anfangsadresse, Taster/Schalter oder Position.</p>
 <p><b>F5</b> RUN (vorher automatisch übersetzen), <b>⇧F5</b> STOP, <b>F10</b> Einzelschritt,
 <b>F7</b> Status Baustein ein/aus, <b>⌘B</b> übersetzen und laden. Die Statusspalte zeigt je Zeile das VKE
 (Kästchen), den Signalzustand des Operanden (STA) und bei Lade-/Rechenoperationen AKKU 1.

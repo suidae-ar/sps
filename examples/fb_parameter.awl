@@ -4,7 +4,7 @@
 ;
 ;  Motor 1:  E 0.0 Ein, E 0.1 Aus, E 0.2 Störung  -> A 0.0 Motor, A 0.1 Störmeldung
 ;  Motor 2:  E 1.0 Ein, E 1.1 Aus, E 1.2 Störung  -> A 0.4 Motor, A 0.5 Störmeldung
-;  Ein- und Aus-Eingänge am besten als Taster schalten.
+;  Ein- und Aus-Eingänge am besten als Taster (Rechtsklick auf die Eingabekarte).
 ; =====================================================================
 
 OB 1

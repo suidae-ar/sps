@@ -1,6 +1,6 @@
 ; =====================================================================
 ;  Grundverknüpfungen in AWL (STEP 5)
-;  Eingänge im E/A-Panel schalten, die Ausgänge leuchten.
+;  Eingänge auf der Digitaleingabe schalten, die Ausgänge leuchten.
 ;  F5 = RUN, F7 = Status Baustein, F10 = Einzelschritt
 ; =====================================================================
 
