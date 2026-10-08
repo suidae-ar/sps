@@ -1,0 +1,50 @@
+; =====================================================================
+;  Grundverknüpfungen in AWL (STEP 5)
+;  Eingänge im E/A-Panel schalten, die Ausgänge leuchten.
+;  F5 = RUN, F7 = Status Baustein, F10 = Einzelschritt
+; =====================================================================
+
+OB 1
+; --- UND: A 0.0 = E 0.0 UND E 0.1
+:U  E 0.0
+:U  E 0.1
+:=  A 0.0
+***
+; --- ODER: A 0.1 = E 0.0 ODER E 0.1
+:O  E 0.0
+:O  E 0.1
+:=  A 0.1
+***
+; --- Exklusiv-ODER mit Klammern
+:U(
+:U  E 0.0
+:UN E 0.1
+:)
+:O(
+:UN E 0.0
+:U  E 0.1
+:)
+:=  A 0.2
+***
+; --- UND vor ODER: A 0.3 = (E 0.2 UND E 0.3) ODER (E 0.4 UND E 0.5)
+:U  E 0.2
+:U  E 0.3
+:O
+:U  E 0.4
+:U  E 0.5
+:=  A 0.3
+***
+; --- Speicher (rücksetzdominant): E 0.6 setzt, E 0.7 setzt zurück
+:U  E 0.6
+:S  M 1.0
+:U  E 0.7
+:R  M 1.0
+:U  M 1.0
+:=  A 0.4
+***
+; --- Selbsthaltung: E 1.0 = Ein, E 1.1 = Aus
+:U  E 1.0
+:O  A 0.5
+:UN E 1.1
+:=  A 0.5
+:BE

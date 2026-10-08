@@ -1,0 +1,52 @@
+; =====================================================================
+;  Bausteine, Datenbaustein und Schleife
+;  OB 1 ruft PB 1 immer, PB 2 nur bei E 0.7 und FB 1 immer auf.
+; =====================================================================
+
+OB 1
+:SPA PB 1
+:U   E 0.7
+:SPB PB 2           ; bedingter Aufruf
+:SPA FB 1
+:BE
+
+PB 1
+; --- Motor mit Selbsthaltung: E 0.0 = Ein, E 0.1 = Aus
+:U  E 0.0
+:O  A 0.0
+:UN E 0.1
+:=  A 0.0
+:BE
+
+PB 2
+; --- Rechnen mit Datenbaustein: DW 2 = DW 0 + DW 1
+:A  DB 10
+:L  DW 0
+:L  DW 1
+:+F
+:T  DW 2
+; --- Ergebnis zusätzlich auf AB 1 ausgeben
+:T  AB 1
+:BE
+
+FB 1
+; --- Schleife: Summe 1 + 2 + ... + 10 in MW 30
+:L  KF +0
+:T  MW 30           ; Summe
+:L  KF +10
+:T  MW 32           ; Laufvariable
+M001:L  MW 30
+:L  MW 32
+:+F
+:T  MW 30
+:L  MW 32
+:L  KF +1
+:-F
+:T  MW 32
+:SPN =M001          ; weiter, solange Ergebnis <> 0
+:BE
+
+DB 10
+0: KF +100
+1: KF +23
+2: KF +0

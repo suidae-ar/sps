@@ -1,0 +1,58 @@
+; =====================================================================
+;  Zeiten: alle fünf Zeitarten, ein Blinker und eine Treppenhausschaltung
+;  Zeitwert vor dem Start laden: KT Wert.Basis
+;  Basis: .0 = 10 ms   .1 = 100 ms   .2 = 1 s   .3 = 10 s
+; =====================================================================
+
+OB 1
+; --- Blinker 1 Hz an A 0.0 (zwei Zeiten, die sich gegenseitig starten)
+:UN T 2
+:L  KT 050.0        ; 0,5 s
+:SE T 1
+:U  T 1
+:L  KT 050.0
+:SE T 2
+:U  T 1
+:=  A 0.0
+***
+; --- SI Impuls: A 0.1 für max. 3 s, solange E 0.1 betätigt
+:U  E 0.1
+:L  KT 030.1
+:SI T 3
+:U  T 3
+:=  A 0.1
+***
+; --- SV verlängerter Impuls: Flanke an E 0.2 -> A 0.2 für 3 s
+:U  E 0.2
+:L  KT 030.1
+:SV T 4
+:U  T 4
+:=  A 0.2
+***
+; --- SE Einschaltverzögerung: A 0.3 kommt 2 s nach E 0.3
+:U  E 0.3
+:L  KT 020.1
+:SE T 5
+:U  T 5
+:=  A 0.3
+***
+; --- SS speichernde Einschaltverzögerung, Rücksetzen mit E 0.5
+:U  E 0.4
+:L  KT 020.1
+:SS T 6
+:U  E 0.5
+:R  T 6
+:U  T 6
+:=  A 0.4
+***
+; --- SA Treppenhauslicht: A 0.5 bleibt 5 s nach Loslassen von E 0.6 an
+:U  E 0.6
+:L  KT 005.2
+:SA T 7
+:U  T 7
+:=  A 0.5
+***
+; --- Restzeit von T 7 dual nach MW 10 (siehe Variablen)
+:L  T 7
+:T  MW 10
+:BE

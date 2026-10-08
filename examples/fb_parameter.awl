@@ -1,0 +1,107 @@
+; =====================================================================
+;  Funktionsbausteine mit Parametern
+;  Ein FB wird mehrfach mit verschiedenen Operanden aufgerufen.
+;
+;  Motor 1:  E 0.0 Ein, E 0.1 Aus, E 0.2 Störung  -> A 0.0 Motor, A 0.1 Störmeldung
+;  Motor 2:  E 1.0 Ein, E 1.1 Aus, E 1.2 Störung  -> A 0.4 Motor, A 0.5 Störmeldung
+;  Ein- und Aus-Eingänge am besten als Taster schalten.
+; =====================================================================
+
+OB 1
+; --- Taktmerker M 0.5 (1 Hz) aus FB 20
+:SPA FB 20
+NAME :TAKT
+ZEIT :KT 050.0
+T1   :T 1
+T2   :T 2
+AUS  :M 0.5
+***
+; --- Motor 1
+:SPA FB 10
+NAME :MOTOR
+EIN  :E 0.0
+AUS  :E 0.1
+STOE :E 0.2
+TAKT :M 0.5
+MOT  :A 0.0
+MELD :A 0.1
+***
+; --- Motor 2: derselbe Baustein, andere Operanden
+:SPA FB 10
+NAME :MOTOR
+EIN  :E 1.0
+AUS  :E 1.1
+STOE :E 1.2
+TAKT :M 0.5
+MOT  :A 0.4
+MELD :A 0.5
+***
+; --- Laufzeitzähler: Wortparameter und Datenbaustein als Parameter
+:SPA FB 30
+NAME :ZAEHL
+LAUF :A 0.0
+FLAN :M 1.0
+DBNR :DB 5
+STND :MW 20
+:BE
+
+FB 10
+NAME :MOTOR
+BEZ  :EIN    E/A/D/B/T/Z: E  BI/BY/W/K: BI
+BEZ  :AUS    E/A/D/B/T/Z: E  BI/BY/W/K: BI
+BEZ  :STOE   E/A/D/B/T/Z: E  BI/BY/W/K: BI
+BEZ  :TAKT   E/A/D/B/T/Z: E  BI/BY/W/K: BI
+BEZ  :MOT    E/A/D/B/T/Z: A  BI/BY/W/K: BI
+BEZ  :MELD   E/A/D/B/T/Z: A  BI/BY/W/K: BI
+; Selbsthaltung, Aus und Störung schalten ab
+:U  =EIN
+:O  =MOT
+:UN =AUS
+:UN =STOE
+:=  =MOT
+; Störmeldung blinkt im Takt
+:U  =STOE
+:U  =TAKT
+:=  =MELD
+:BE
+
+FB 20
+NAME :TAKT
+BEZ  :ZEIT   E/A/D/B/T/Z: D  KM/KH/KY/KC/KF/KT/KZ/KG: KT
+BEZ  :T1     E/A/D/B/T/Z: T
+BEZ  :T2     E/A/D/B/T/Z: T
+BEZ  :AUS    E/A/D/B/T/Z: A  BI/BY/W/K: BI
+:UN =T2
+:L  =ZEIT
+:SE =T1
+:U  =T1
+:L  =ZEIT
+:SE =T2
+:U  =T1
+:=  =AUS
+:BE
+
+FB 30
+NAME :ZAEHL
+BEZ  :LAUF   E/A/D/B/T/Z: E  BI/BY/W/K: BI
+BEZ  :FLAN   E/A/D/B/T/Z: A  BI/BY/W/K: BI
+BEZ  :DBNR   E/A/D/B/T/Z: B
+BEZ  :STND   E/A/D/B/T/Z: A  BI/BY/W/K: W
+; Bei jeder steigenden Flanke von LAUF den Zähler in DW 0 erhöhen
+:A  =DBNR
+:U  =LAUF
+:UN =FLAN
+:SPB =M001
+:SPA =M002
+M001:L  DW 0
+:L  KF +1
+:+F
+:T  DW 0
+M002:U  =LAUF
+:=  =FLAN
+:L  DW 0
+:T  =STND
+:BE
+
+DB 5
+0: KF +0

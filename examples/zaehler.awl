@@ -1,0 +1,36 @@
+; =====================================================================
+;  Zähler und Vergleicher: Kartonabfüllung
+;  E 0.0 = Lichtschranke (vorwärts zählen)    E 0.1 = Teil entnommen (rückwärts)
+;  E 0.2 = Zähler auf Vorgabe 5 setzen         E 0.3 = Zähler rücksetzen
+;  E 0.0 am besten als Taster schalten (Häkchen "Taster" im E/A-Panel)
+; =====================================================================
+
+OB 1
+:U  E 0.0
+:ZV Z 1
+:U  E 0.1
+:ZR Z 1
+:U  E 0.2
+:L  KZ 005
+:S  Z 1
+:U  E 0.3
+:R  Z 1
+***
+; --- Zählerstand dual nach MW 20
+:L  Z 1
+:T  MW 20
+***
+; --- Karton voll ab 10 Teilen -> A 0.0
+:L  MW 20
+:L  KF +10
+:>=F
+:=  A 0.0
+***
+; --- Zähler nicht leer -> A 0.1
+:U  Z 1
+:=  A 0.1
+***
+; --- Zählerstand auf den Ausgängen AB 1 anzeigen
+:L  MW 20
+:T  AB 1
+:BE
