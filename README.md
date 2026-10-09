@@ -1,6 +1,6 @@
 # S5Sim – Simulator für SIMATIC-S5-Programme (AWL)
 
-Dokumentation: [Programmbeschreibung](docs/beschreibung.md) · [Handbuch](docs/handbuch.md)
+Dokumentation: [Programmbeschreibung](docs/beschreibung.md) · [Handbuch](docs/handbuch.md) · [Raspberry Pi (Planung)](docs/raspi/README.md)
 
 Desktop-Simulator für STEP-5-Programme in Anweisungsliste, gebaut mit C++20 und Qt 6.
 

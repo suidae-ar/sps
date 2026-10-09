@@ -1,2 +1,4 @@
 build/
 .DS_Store
+# eigene Unterlagen (Siemens-Hefte, Schaltpläne) nicht ins Repository
+unterlagen/
