@@ -80,6 +80,12 @@ MainWindow::MainWindow(PlcController* plc)
         messages_->addItem(tr("Urlöschen ausgeführt"));
     });
     connect(plc_, &PlcController::runtimeError, this, &MainWindow::onRuntimeError);
+    connect(plc_, &PlcController::familyChanged, this, [this] {
+        for (QAction* a : std::as_const(familyActions_)) a->setChecked(a->data().toInt() == static_cast<int>(plc_->family()));
+        // Programm gegen die neue CPU prüfen und neu laden
+        compile();
+        messages_->addItem(tr("CPU getauscht: %1").arg(QString::fromLatin1(s5::mc5::familyName(plc_->family()))));
+    });
     connect(plc_, &PlcController::stateChanged, this, [this] {
         const bool halted = plc_->cpu().state() == s5::CpuState::Halt;
         editor_->setExecutionLine(halted ? plc_->cpu().currentLine() : -1);
@@ -182,22 +188,16 @@ void MainWindow::createActions()
     tb->addAction(stopAct_);
     tb->addAction(stepAct_);
     cpuMenu->addSeparator();
-    QMenu* famMenu = cpuMenu->addMenu(tr("&Zielsystem (MC5)"));
+    QMenu* famMenu = cpuMenu->addMenu(tr("CPU-&Typ"));
     auto* famGroup = new QActionGroup(this);
-    family_ = static_cast<s5::mc5::CpuFamily>(
-        QSettings().value(QStringLiteral("mc5/family"), static_cast<int>(s5::mc5::CpuFamily::S5_115U)).toInt());
-    for (auto f : {s5::mc5::CpuFamily::S5_90_95U, s5::mc5::CpuFamily::S5_100U, s5::mc5::CpuFamily::S5_115U,
-                   s5::mc5::CpuFamily::S5_135U}) {
+    for (auto f : PlcController::families()) {
         QAction* fa = famMenu->addAction(QString::fromLatin1(s5::mc5::familyName(f)));
         fa->setCheckable(true);
-        fa->setChecked(f == family_);
+        fa->setChecked(f == plc_->family());
+        fa->setData(static_cast<int>(f));
         famGroup->addAction(fa);
-        connect(fa, &QAction::triggered, this, [this, f] {
-            family_ = f;
-            QSettings().setValue(QStringLiteral("mc5/family"), static_cast<int>(f));
-            updateMc5View();
-            emit familyChanged();
-        });
+        familyActions_ << fa;
+        connect(fa, &QAction::triggered, plc_, [this, f] { plc_->setFamily(f); });
     }
     cpuMenu->addSeparator();
     a = cpuMenu->addAction(tr("&Urlöschen"), plc_, &PlcController::reset);
@@ -256,8 +256,30 @@ bool MainWindow::compile()
     }
     editor_->setErrorLines(errLines);
     if (!r.ok()) {
+        compiledRevision_ = -1;     // beim nächsten Start erneut übersetzen
         statusBar()->showMessage(tr("Übersetzen fehlgeschlagen: %n Fehler", nullptr, static_cast<int>(r.errors.size())));
         if (!errLines.isEmpty()) editor_->gotoLine(errLines.first());
+        return false;
+    }
+
+    // Kennt die gesteckte CPU alle Operationen?
+    const QString cpuName = QString::fromLatin1(s5::mc5::familyName(plc_->family()));
+    const auto cpuErrors = s5::mc5::checkCpu(r.program, plc_->family());
+    for (const auto& e : cpuErrors) {
+        auto* item = new QListWidgetItem(
+            tr("Zeile %1: %2 (gesteckte CPU: %3)").arg(e.line).arg(QString::fromStdString(e.message), cpuName));
+        item->setData(Qt::UserRole, e.line);
+        item->setForeground(QColor(0xd0, 0x30, 0x30));
+        messages_->addItem(item);
+        errLines << e.line;
+    }
+    if (!cpuErrors.empty()) {
+        compiledRevision_ = -1;
+        editor_->setErrorLines(errLines);
+        editor_->gotoLine(errLines.first());
+        updateMc5View();
+        statusBar()->showMessage(tr("Das Programm passt nicht zur CPU %1: %n Fehler", nullptr,
+                                    static_cast<int>(cpuErrors.size())).arg(cpuName));
         return false;
     }
 
@@ -331,7 +353,7 @@ void MainWindow::updateMc5View()
         mc5View_->setPlainText(tr("Programm enthält Syntaxfehler – siehe Meldungen."));
         return;
     }
-    mc5View_->showResult(s5::mc5::assemble(r.program, family_), family_, editor_->toPlainText().split(QLatin1Char('\n')));
+    mc5View_->showResult(s5::mc5::assemble(r.program, plc_->family()), plc_->family(), editor_->toPlainText().split(QLatin1Char('\n')));
 }
 
 void MainWindow::showMc5View()
@@ -349,14 +371,14 @@ void MainWindow::exportMc5()
         compile();
         return;
     }
-    const s5::mc5::AssembleResult a = s5::mc5::assemble(r.program, family_);
+    const s5::mc5::AssembleResult a = s5::mc5::assemble(r.program, plc_->family());
     updateMc5View();
     if (!a.ok()) {
         QString msg;
         for (const auto& e : a.errors) msg += tr("Zeile %1: %2\n").arg(e.line).arg(QString::fromStdString(e.message));
         QMessageBox::warning(this, tr("MC5 exportieren"),
                              tr("Das Programm lässt sich nicht für %1 übersetzen:\n\n%2")
-                                 .arg(QString::fromLatin1(s5::mc5::familyName(family_)), msg));
+                                 .arg(QString::fromLatin1(s5::mc5::familyName(plc_->family())), msg));
         return;
     }
     QString suggestion = currentFile_.isEmpty() ? QStringLiteral("programm.mc5")
@@ -376,7 +398,7 @@ void MainWindow::exportMc5()
     for (const auto& w : a.warnings)
         messages_->addItem(tr("MC5 Zeile %1: %2").arg(w.line).arg(QString::fromStdString(w.message)));
     const QString msg = tr("MC5 exportiert (%1): %2 Bausteine, %3 Byte → %4")
-                            .arg(QString::fromLatin1(s5::mc5::familyName(family_)))
+                            .arg(QString::fromLatin1(s5::mc5::familyName(plc_->family())))
                             .arg(a.blocks.size())
                             .arg(bytes.size())
                             .arg(QFileInfo(path).fileName());
@@ -606,7 +628,8 @@ MOT  :A 0.0</pre>
 Anzahl, Namen und Typen der Parameter werden beim Übersetzen geprüft.</p>
 
 <h3>Maschinencode (MC5)</h3>
-<p>Unter <i>CPU → Zielsystem</i> wird die S5-Familie gewählt. Das Fenster <i>Maschinencode</i> zeigt je Baustein
+<p>Die gesteckte CPU (S5-90U/95U, 100U, 115U, 135U/155U) wird am Baugruppenträger per Rechtsklick auf die CPU
+oder unter <i>CPU → CPU-Typ</i> gewählt; sie gilt für das Übersetzen und den Maschinencode. Das Fenster <i>Maschinencode</i> zeigt je Baustein
 die MC5-Wörter mit Adresse und AWL-Zeile. <i>Datei → MC5 exportieren</i> speichert die Bausteine als
 Speicherabbild (Bausteine mit Kopf 7070 hintereinander), <i>MC5 importieren</i> übersetzt ein solches Abbild
 zurück in AWL. Ergänzende Operationen (Sprünge auf Marken, Wortverknüpfungen, Schieben, I/D, TAK, P/SU/RU, B =)

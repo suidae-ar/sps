@@ -1,5 +1,6 @@
 #include "plccontroller.h"
 
+#include <QSettings>
 #include <QTimer>
 
 PlcController::PlcController(QObject* parent)
@@ -10,6 +11,24 @@ PlcController::PlcController(QObject* parent)
     cycleTimer_->setInterval(10);
     connect(cycleTimer_, &QTimer::timeout, this, &PlcController::onCycle);
     clock_.start();
+
+    const int f = QSettings().value(QStringLiteral("mc5/family"), static_cast<int>(family_)).toInt();
+    if (f >= 0 && f <= static_cast<int>(s5::mc5::CpuFamily::S5_135U)) family_ = static_cast<s5::mc5::CpuFamily>(f);
+}
+
+QList<s5::mc5::CpuFamily> PlcController::families()
+{
+    return {s5::mc5::CpuFamily::S5_90_95U, s5::mc5::CpuFamily::S5_100U, s5::mc5::CpuFamily::S5_115U,
+            s5::mc5::CpuFamily::S5_135U};
+}
+
+void PlcController::setFamily(s5::mc5::CpuFamily family)
+{
+    if (family == family_) return;
+    stop();     // wie beim echten Tausch: CPU läuft nicht weiter
+    family_ = family;
+    QSettings().setValue(QStringLiteral("mc5/family"), static_cast<int>(family_));
+    emit familyChanged();
 }
 
 bool PlcController::run()

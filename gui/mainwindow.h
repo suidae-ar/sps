@@ -25,10 +25,8 @@ public:
     void showMc5View();
     bool maybeSave();
     void saveWindowState() const;
-    s5::mc5::CpuFamily family() const { return family_; }
 
 signals:
-    void familyChanged();
     void showRackRequested();
 
 protected:
@@ -62,7 +60,7 @@ private:
     QListWidget* messages_;
     Mc5View* mc5View_;
     QDockWidget* msgDock_;
-    s5::mc5::CpuFamily family_ = s5::mc5::CpuFamily::S5_115U;
+    QList<QAction*> familyActions_;
     QLabel* stateLabel_;
     QLabel* cycleLabel_;
 

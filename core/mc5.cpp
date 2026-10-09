@@ -12,6 +12,7 @@ namespace {
 
 struct AsmFail {
     std::string message;
+    bool cpuSpecific = false;   // Operation gibt es auf der gewählten CPU nicht
 };
 
 [[noreturn]] void fail(const std::string& m) { throw AsmFail{m}; }
@@ -27,7 +28,7 @@ bool is135(CpuFamily f) { return f == CpuFamily::S5_135U; }
 
 void need135(CpuFamily f, const std::string& what)
 {
-    if (!is135(f)) fail(what + " gibt es nur bei S5-135U/155U");
+    if (!is135(f)) throw AsmFail{what + " gibt es nur bei S5-135U/155U", true};
 }
 
 // ------------------------------------------------------------------ Tabellen
@@ -474,6 +475,7 @@ Mc5Block assembleBlock(const Program& program, const Block& block, CpuFamily fam
                 w = as.encode(ins, addr[i], &labelAddr);
             } catch (const AsmFail& f) {
                 error(ins.line, f.message);
+                if (f.cpuSpecific) result.cpuErrors.push_back({ins.line, f.message});
                 w.assign(1, 0x0000);
             }
             for (uint16_t x : w) {
@@ -1099,6 +1101,13 @@ AssembleResult assemble(const Program& program, CpuFamily family)
     std::sort(result.errors.begin(), result.errors.end(),
               [](const Diagnostic& a, const Diagnostic& b) { return a.line < b.line; });
     return result;
+}
+
+std::vector<Diagnostic> checkCpu(const Program& program, CpuFamily family)
+{
+    std::vector<Diagnostic> d = assemble(program, family).cpuErrors;
+    std::sort(d.begin(), d.end(), [](const Diagnostic& a, const Diagnostic& b) { return a.line < b.line; });
+    return d;
 }
 
 DisassembleResult disassemble(const std::vector<Mc5Block>& blocks)

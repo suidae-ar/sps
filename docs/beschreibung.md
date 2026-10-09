@@ -17,7 +17,7 @@ Baugruppenträger. Zusätzlich übersetzt S5Sim Programme in den **MC5-Maschinen
 
 | Bereich | Inhalt |
 |---|---|
-| Baugruppenträger | CPU-Baugruppe mit RUN/STOP-Schalter, Urlöschen, Status-LEDs und PG-Taster; steckbare Digitalein- und -ausgaben |
+| Baugruppenträger | tauschbare CPU-Baugruppe (S5-90U/95U, 100U, 115U, 135U/155U) mit RUN/STOP-Schalter, Urlöschen, Status-LEDs und PG-Taster; steckbare Digitalein- und -ausgaben |
 | Editor (PG) | AWL-Editor mit Syntaxhervorhebung, Status Baustein, Einzelschritt, Variablen, Meldungen, Maschinencode |
 | CPU | Zyklische Bearbeitung von OB 1, Neuanlauf mit OB 21, Prozessabbild, VKE, AKKU 1/2, Zeiten, Zähler, Datenbausteine, Bausteinaufrufe, FB-Parameter |
 | MC5 | Assembler AWL → MC5 und Disassembler MC5 → AWL für S5-90U/95U, 100U, 115U, 135U/155U |
@@ -104,8 +104,8 @@ S5-90U/95U, S5-100U und S5-135U/155U sowie den Handbuchangaben zu Bausteinkopf u
 - **FB-Aufruf:** `SPA/SPB FB n`, Sprung über die Parameterliste, je Parameter ein Wort
 - **Netzwerke:** `***` wird als `BLD 255` abgelegt
 
-Je Zielsystem wird geprüft, ob eine Operation dort existiert (`XF`, `:F`, Datenbits `U D n.m` und
-`P/SU/RU` mit E/A/M nur bei S5-135U/155U). Die Tests prüfen jeden Einzelcode gegen die Siemens-Tabelle
+Je nach gesteckter CPU wird – beim Übersetzen und im Maschinencode – geprüft, ob eine Operation dort
+existiert (`XF`, `:F`, Datenbits `U D n.m` und `P/SU/RU` mit E/A/M nur bei S5-135U/155U). Die Tests prüfen jeden Einzelcode gegen die Siemens-Tabelle
 sowie den Rundlauf AWL → MC5 → AWL → MC5 auf Bitgleichheit.
 
 **Bewusst nicht erzeugt**, weil in den Quellen nicht belegt: die Kennung der Parameterart Z im FB-Kopf

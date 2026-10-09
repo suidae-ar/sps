@@ -31,7 +31,7 @@ RackWindow::RackWindow(PlcController* plc, MainWindow* editor)
     layout_->setSpacing(4);
 
     cpuModule_ = new rack::CpuModule(plc_);
-    cpuModule_->setFamilyName(QString::fromLatin1(s5::mc5::familyName(editor_->family())));
+    cpuModule_->setFamilyName(QString::fromLatin1(s5::mc5::familyName(plc_->family())));
     emptySlot_ = new rack::EmptySlot;
     layout_->addWidget(cpuModule_);
     layout_->addWidget(emptySlot_);
@@ -47,8 +47,20 @@ RackWindow::RackWindow(PlcController* plc, MainWindow* editor)
     connect(cpuModule_, &rack::CpuModule::editorRequested, this, &RackWindow::showEditor);
     connect(cpuModule_, &rack::CpuModule::message, this, [this](const QString& m) { statusBar()->showMessage(m, 5000); });
     connect(emptySlot_, &rack::EmptySlot::clicked, this, &RackWindow::showAddMenu);
-    connect(editor_, &MainWindow::familyChanged, this, [this] {
-        cpuModule_->setFamilyName(QString::fromLatin1(s5::mc5::familyName(editor_->family())));
+    connect(cpuModule_, &rack::CpuModule::contextRequested, this, [this](const QPoint& pos) {
+        QMenu menu;
+        addCpuActions(&menu);
+        menu.exec(pos);
+    });
+    connect(plc_, &PlcController::familyChanged, this, [this] {
+        const QString name = QString::fromLatin1(s5::mc5::familyName(plc_->family()));
+        cpuModule_->setFamilyName(name);
+        const auto bad = s5::mc5::checkCpu(plc_->cpu().program(), plc_->family());
+        statusBar()->showMessage(bad.empty()
+                                     ? tr("CPU getauscht: %1 – CPU im STOP").arg(name)
+                                     : tr("CPU getauscht: %1 – das Programm enthält %n Operation(en), die diese CPU "
+                                          "nicht kennt (siehe Editor)", nullptr, static_cast<int>(bad.size())).arg(name),
+                                 8000);
     });
     connect(editor_, &MainWindow::showRackRequested, this, [this] {
         show();
@@ -70,12 +82,14 @@ RackWindow::RackWindow(PlcController* plc, MainWindow* editor)
         rackMenu->addAction(tr("Digitalausgabe DA %1 stecken").arg(bytes * 8), this,
                             [this, bytes] { addModuleOfKind(ModuleKind::DigitalOut, bytes); });
     rackMenu->addSeparator();
+    addCpuActions(rackMenu->addMenu(tr("&CPU tauschen")));
+    rackMenu->addSeparator();
     rackMenu->addAction(tr("&Beenden"), QKeySequence::Quit, this, &QWidget::close);
 
     QMenu* winMenu = menuBar()->addMenu(tr("&Fenster"));
     winMenu->addAction(tr("&Editor (PG)"), QKeySequence(Qt::CTRL | Qt::Key_E), this, &RackWindow::showEditor);
 
-    statusBar()->showMessage(tr("Rechtsklick auf eine Baugruppe: Adresse, Taster, verschieben oder ziehen"), 8000);
+    statusBar()->showMessage(tr("Rechtsklick auf die CPU: CPU tauschen · auf eine E/A-Baugruppe: Adresse, Schalter/Taster, verschieben, ziehen"), 8000);
 
     restoreModules();
 
@@ -132,6 +146,24 @@ void RackWindow::showAddMenu(const QPoint& globalPos)
         menu.addAction(tr("Digitalausgabe DA %1").arg(bytes * 8), this,
                        [this, bytes] { addModuleOfKind(ModuleKind::DigitalOut, bytes); });
     menu.exec(globalPos);
+}
+
+void RackWindow::addCpuActions(QMenu* menu)
+{
+    // Menüeinträge werden bei jedem Öffnen neu gesetzt, damit das Häkchen stimmt
+    auto fill = [this, menu] {
+        menu->clear();
+        auto* group = new QActionGroup(menu);
+        for (auto f : PlcController::families()) {
+            QAction* a = menu->addAction(tr("CPU %1").arg(QString::fromLatin1(s5::mc5::familyName(f))), this,
+                                         [this, f] { plc_->setFamily(f); });
+            a->setCheckable(true);
+            a->setChecked(f == plc_->family());
+            group->addAction(a);
+        }
+    };
+    fill();
+    connect(menu, &QMenu::aboutToShow, this, fill);
 }
 
 void RackWindow::showModuleMenu(DigitalModule* m, const QPoint& globalPos)

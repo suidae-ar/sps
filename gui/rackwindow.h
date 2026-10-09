@@ -26,6 +26,7 @@ private:
     void addModuleOfKind(rack::ModuleKind kind, int bytes);
     void showAddMenu(const QPoint& globalPos);
     void showModuleMenu(rack::DigitalModule* m, const QPoint& globalPos);
+    void addCpuActions(QMenu* menu);
     void removeModule(rack::DigitalModule* m);
     void setMomentaryMask(rack::DigitalModule* m, uint32_t mask);
     void moveModule(rack::DigitalModule* m, int delta);

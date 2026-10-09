@@ -26,7 +26,7 @@ open build/S5Sim.app
 
 ## Oberfläche
 
-- **Baugruppenträger** (Hauptfenster) im Stil der S5-115U: CPU mit Betriebsartenschalter RUN/STOP,
+- **Baugruppenträger** (Hauptfenster) im Stil der S5-115U: tauschbare CPU (90U/95U, 100U, 115U, 135U/155U) mit Betriebsartenschalter RUN/STOP,
   Urlöschen-Taster (nur im STOP), LEDs RUN/STOP/STÖRUNG und PG-Taster, der den Editor öffnet
 - **Digitalein- und -ausgaben** DE/DA mit 8, 16 oder 32 Bit stecken, ziehen und verschieben; Bits senkrecht mit
   Status-LEDs (Eingänge grün, Ausgänge rot), je Eingang Kippschalter oder Taster (auch gemischt); Anfangsadresse je Baugruppe einstellbar
@@ -47,11 +47,11 @@ open build/S5Sim.app
 
 ## MC5-Maschinencode
 
-- Assembler AWL → MC5 und Disassembler MC5 → AWL, Zielsystem wählbar: S5-90U/95U, 100U, 115U, 135U/155U
+- Assembler AWL → MC5 und Disassembler MC5 → AWL für die gesteckte CPU: S5-90U/95U, 100U, 115U, 135U/155U
 - Bausteinkopf (7070, Typ, Nummer, Länge), FB-Parameterblock (NAME/BEZ), FB-Aufrufe mit Parameterliste,
   Formaloperanden, relative Sprünge, Netzwerke (`***` = BLD 255)
 - Export/Import als Speicherabbild (`*.mc5`: Bausteine mit Kopf hintereinander), Ansicht „Maschinencode“
-- Prüfung je Zielsystem: `XF`, `:F`, Datenbits `U D n.m`, `P/SU/RU` mit E/A/M nur bei 135U/155U;
+- Prüfung je CPU (auch beim Übersetzen für den Simulator): `XF`, `:F`, Datenbits `U D n.m`, `P/SU/RU` mit E/A/M nur bei 135U/155U;
   ergänzende Operationen wie bei STEP 5 nur im FB; Parameternamen max. 4 Zeichen
 - Codes nach den Siemens-Operationslisten (Auflistung des Maschinencodes); getestet sind alle Einzelcodes
   und der Rundlauf AWL → MC5 → AWL → MC5 (bitgleich)

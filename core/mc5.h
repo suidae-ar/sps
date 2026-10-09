@@ -28,12 +28,16 @@ struct Mc5Block {
 struct AssembleResult {
     std::vector<Mc5Block> blocks;
     std::vector<Diagnostic> errors;
+    std::vector<Diagnostic> cpuErrors;  // Teil von errors: Operation gibt es auf dieser CPU nicht
     std::vector<Diagnostic> warnings;
 
     bool ok() const { return errors.empty(); }
 };
 
 AssembleResult assemble(const Program& program, CpuFamily family);
+
+// Operationen, die die gewählte CPU nicht kennt (z.B. XF auf S5-115U)
+std::vector<Diagnostic> checkCpu(const Program& program, CpuFamily family);
 
 struct DisassembleResult {
     std::string source;                 // AWL-Text, wieder übersetzbar

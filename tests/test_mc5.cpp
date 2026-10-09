@@ -204,6 +204,14 @@ void test135Only()
         CHECK(!a.ok());
         CHECK(!a.errors.empty() && a.errors[0].message.find("135U") != std::string::npos);
     }
+    // checkCpu meldet nur CPU-abhängige Operationen, nicht allgemeine MC5-Grenzen
+    const Program mixed = parse("OB 1\n:L KF +2\n:L KF +3\n:XF\n:L DW 300\n:SPA FB 1\nX :Z 1\n:BE\n"
+                                "FB 1\nBEZ :X Z\n:ZV =X\n:BE\n").program;
+    const auto cpuErr = checkCpu(mixed, CpuFamily::S5_115U);
+    CHECK(cpuErr.size() == 1 && cpuErr[0].line == 4);
+    CHECK(checkCpu(mixed, CpuFamily::S5_135U).empty());
+    CHECK(assemble(mixed, CpuFamily::S5_135U).errors.size() == 2);   // DW 300 und Parameterart Z
+
     // Datenwort > 255 ist im 1-Wort-Befehl nicht darstellbar
     CHECK(!assemble(parse("OB 1\n:L DW 300\n:BE\n").program, CpuFamily::S5_115U).ok());
 }

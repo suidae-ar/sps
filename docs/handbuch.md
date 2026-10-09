@@ -70,8 +70,13 @@ endet S5Sim (bei ungesicherten Programmänderungen folgt eine Rückfrage).
 | Schalter **RESET – Urlöschen** | federt zurück; löscht Merker, Zeiten, Zähler und setzt die Datenbausteine auf ihre Anfangswerte. Nur im STOP möglich |
 | **PG**-Buchse und Taster **Editor** | öffnet den Editor (Programmiergerät) |
 
-Unter der CPU-Bezeichnung steht die gewählte S5-Familie (Einstellung im Editor unter
-*CPU → Zielsystem*).
+Unter der CPU-Bezeichnung steht die gesteckte S5-Familie.
+
+**CPU tauschen:** Rechtsklick auf die CPU-Baugruppe oder Menü *Baugruppe → CPU tauschen* und eine der
+CPUs **S5-90U/95U**, **S5-100U**, **S5-115U** oder **S5-135U/155U** wählen (im Editor ebenso unter
+*CPU → CPU-Typ*). Wie beim echten Tausch geht die CPU dabei in den STOP. Das Programm wird sofort gegen die
+neue CPU geprüft: Verwendet es Operationen, die sie nicht kennt (siehe Kapitel 7.1), meldet die
+Statuszeile das, und ein Neuanlauf ist erst nach einer Korrektur möglich.
 
 Beim Umlegen auf RUN übersetzt S5Sim ein geändertes Programm automatisch. Enthält es Fehler, bleibt die
 CPU im STOP und die Statuszeile weist darauf hin; die Fehler stehen im Editor unter *Meldungen*.
@@ -477,10 +482,10 @@ funktioniert das; in Maschinencode lässt es sich nicht übersetzen (siehe Kapit
 
 ## 7. Maschinencode (MC5)
 
-### 7.1 Zielsystem
+### 7.1 CPU-Typ
 
-Unter *CPU → Zielsystem (MC5)* wird die S5-Familie gewählt: **S5-90U/95U**, **S5-100U**, **S5-115U**
-oder **S5-135U/155U**. Sie bestimmt, welche Operationen im Maschinencode erlaubt sind:
+Die gesteckte CPU (Kapitel 3.1) bestimmt, welche Operationen erlaubt sind – beim Übersetzen für den
+Simulator ebenso wie im Maschinencode:
 
 | Operation | 90U/95U, 100U, 115U | 135U/155U |
 |---|---|---|
@@ -489,7 +494,9 @@ oder **S5-135U/155U**. Sie bestimmt, welche Operationen im Maschinencode erlaubt
 | `P PN SU RU` mit `D n.m` | ✓ (im FB) | ✓ (im FB) |
 | `P PN SU RU` mit `E`, `A`, `M` | nicht vorhanden | ✓ (im FB) |
 
-Der Simulator selbst führt alle Operationen aus – die Prüfung betrifft nur den Maschinencode.
+Im übrigen Befehlsvorrat von S5Sim verhalten sich S5-90U/95U, S5-100U und S5-115U gleich. Weitere
+Unterschiede der echten CPUs (Adressbereiche, Anzahl der Zeiten und Zähler, Organisationsbausteine) bildet
+S5Sim nicht nach.
 
 ### 7.2 Ansicht „Maschinencode“
 
@@ -505,7 +512,7 @@ OB 1   (42 Wörter)
 ```
 
 Links steht die Wortadresse im Baustein, dann die Maschinenwörter (hexadezimal) und die AWL-Zeile.
-Lässt sich das Programm für das gewählte Zielsystem nicht übersetzen, stehen die Gründe mit Zeilennummer
+Lässt sich das Programm für die gesteckte CPU nicht übersetzen, stehen die Gründe mit Zeilennummer
 am Anfang der Ansicht.
 
 ### 7.3 Exportieren und Importieren
@@ -557,7 +564,7 @@ Die Beispiele verwenden die Grundbestückung (Eingänge EB 0/EB 1, Ausgänge AB 
 | *Ungültiger Zeitwert in AKKU 1* | Vor `SE T …` usw. wurde kein `KT`-Wert geladen. |
 | *Zykluszeit überschritten (Endlosschleife?)* | Ein Sprung führt immer wieder zurück; Abbruchbedingung prüfen. |
 | *FB n: Parameter nicht versorgt: …* | Beim Aufruf fehlen Parameterzeilen. |
-| *… gibt es nur bei S5-135U/155U* | Nur für den Maschinencode relevant: anderes Zielsystem wählen oder Operation ersetzen. |
+| *… gibt es nur bei S5-135U/155U (gesteckte CPU: …)* | Die Operation fehlt auf der gesteckten CPU: CPU tauschen oder Operation ersetzen. |
 
 **Tipps**
 
@@ -584,6 +591,6 @@ Die Beispiele verwenden die Grundbestückung (Eingänge EB 0/EB 1, Ausgänge AB 
 
 Unter Linux steht Strg statt ⌘.
 
-Einstellungen (Fensterpositionen, Bestückung, Zielsystem, zuletzt geöffnete Datei) speichert S5Sim
+Einstellungen (Fensterpositionen, Bestückung, CPU-Typ, zuletzt geöffnete Datei) speichert S5Sim
 unter macOS in `~/Library/Preferences/com.s5sim.S5Sim.plist`, unter Linux in
 `~/.config/S5Sim/S5Sim.conf`.
