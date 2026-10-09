@@ -43,7 +43,7 @@ EB 1) und einer Digitalausgabe DA 16 (AB 0 und AB 1). Im Editor ist das Beispiel
 2. **CPU starten:** Im Baugruppenträger den Kippschalter der CPU auf **RUN** legen. Das Programm wird
    automatisch übersetzt, die grüne LED **RUN** leuchtet.
 3. **Eingänge schalten:** Auf der Digitaleingabe die Kippschalter bei **0.0** und **0.1** umlegen.
-   Die grünen LEDs der Eingänge leuchten, auf der Digitalausgabe leuchten **0.0** (UND) und **0.1** (ODER).
+   Die grünen LEDs der Eingänge leuchten, auf der Digitalausgabe leuchten die roten LEDs **0.0** (UND) und **0.1** (ODER).
 4. **Zuschauen:** Im Editor zeigt die Statusspalte neben jeder Anweisung das Verknüpfungsergebnis (VKE)
    und den Signalzustand des Operanden.
 5. **Ändern:** Programm im Editor ändern, mit ⌘B übersetzen – die CPU arbeitet ab dem nächsten Zyklus
@@ -80,11 +80,16 @@ CPU im STOP und die Statuszeile weist darauf hin; die Fehler stehen im Editor un
 
 Es gibt Digitaleingaben (**DE**) und Digitalausgaben (**DA**) mit 8, 16 oder 32 Bit, also 1, 2 oder
 4 Byte. Jedes Byte ist eine senkrechte Spalte mit der Byteadresse oben (z.B. **EB 0**) und den Bits
-.0 bis .7 darunter. Jedes Bit hat eine grüne Status-LED.
+.0 bis .7 darunter. Jedes Bit hat eine Status-LED – grün bei Eingaben, rot bei Ausgaben.
 
-- **Digitaleingabe:** Jedes Bit hat einen Kippschalter. Ein Klick legt ihn um (Hebel oben = 1).
-  Im Taster-Modus wird jedes Bit zu einem runden Taster, der nur 1 liefert, solange die Maustaste
-  gedrückt ist – gut für Flanken, Zähleingänge und Anforderungstaster.
+- **Digitaleingabe:** Jeder Eingang ist entweder ein **Schalter** oder ein **Taster** – einzeln
+  einstellbar, auch gemischt auf einer Karte:
+  - **Schalter** (Kippschalter): Ein Klick legt ihn um, Hebel oben = 1. Er bleibt in seiner Stellung.
+  - **Taster** (runder Drucktaster mit grauer Kappe): liefert nur 1, solange die Maustaste gedrückt ist –
+    gut für Flanken, Zähleingänge und Anforderungstaster.
+
+  Der Untertitel der Karte zeigt „Schalter“, „Taster“ oder „Schalter/Taster“; wird die Maus über einem
+  Eingang gehalten, erscheint z.B. „E 0.3 – Taster“. Neue Karten haben nur Schalter.
 - **Digitalausgabe:** Die LEDs zeigen die Ausgänge, wie sie die CPU am Zyklusende ausgibt.
   Im STOP sind alle Ausgänge aus.
 
@@ -96,9 +101,12 @@ Die neue Baugruppe erhält die nächste freie Adresse hinter den vorhandenen Bau
 | Eintrag | Wirkung |
 |---|---|
 | Anfangsadresse ändern … | erstes Byte der Baugruppe (EB bzw. AB 0 … 127) |
-| Taster statt Schalter | nur Digitaleingabe; eingeschaltete Schalter werden dabei gelöst |
+| E n.m als Schalter / E n.m als Taster | nur Digitaleingabe: stellt den Eingang unter dem Mauszeiger um |
+| Alle Eingänge als Schalter / als Taster | nur Digitaleingabe: stellt die ganze Karte um |
 | Nach links / Nach rechts | Steckplatz tauschen |
 | Baugruppe ziehen | Baugruppe entfernen; die Eingänge einer gezogenen Eingabe gehen auf 0 |
+
+Wird ein eingeschalteter Schalter zum Taster, geht der Eingang auf 0.
 
 Zwei Baugruppen dürfen dieselbe Adresse haben – sie zeigen dann dieselben Bits.
 
@@ -106,8 +114,8 @@ Bestückung und Fensterposition werden beim Beenden gespeichert.
 
 ### 3.3 Statuszeile
 
-Unten rechts stehen im Betrieb die Zyklusnummer und die Bearbeitungszeit des letzten Zyklus, links
-Hinweise und Fehlermeldungen (z.B. „STOP – Zeile 12: …“).
+Die Statuszeile zeigt Hinweise und Fehlermeldungen (z.B. „STOP – Zeile 12: …“). Zyklusnummer und
+Bearbeitungszeit stehen in der Statuszeile des Editors.
 
 ---
 

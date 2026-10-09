@@ -3,6 +3,8 @@
 
 #include <QWidget>
 
+#include <cstdint>
+
 class PlcController;
 
 namespace rack {
@@ -11,9 +13,13 @@ enum class ModuleKind { DigitalIn, DigitalOut };
 
 struct ModuleConfig {
     ModuleKind kind = ModuleKind::DigitalIn;
-    int bytes = 2;          // 1, 2 oder 4 Byte (8/16/32 Bit)
-    int address = 0;        // Anfangsadresse (EB/AB)
-    bool momentary = false; // Eingänge als Taster statt Schalter
+    int bytes = 2;              // 1, 2 oder 4 Byte (8/16/32 Bit)
+    int address = 0;            // Anfangsadresse (EB/AB)
+    uint32_t momentaryMask = 0; // je Eingang (Byte*8 + Bit): gesetzt = Taster, sonst Schalter
+
+    int bitCount() const { return bytes * 8; }
+    uint32_t allBits() const { return bytes >= 4 ? 0xFFFFFFFFu : (1u << (bytes * 8)) - 1u; }
+    bool isMomentary(int index) const { return (momentaryMask >> index) & 1u; }
 };
 
 // Gemeinsame Optik: Frontplatte, Beschriftung, Steckplatznummer
@@ -69,15 +75,16 @@ public:
     const ModuleConfig& config() const { return cfg_; }
     void setConfig(const ModuleConfig& cfg);
     static int widthFor(int bytes);
+    int bitAt(const QPoint& pos) const;     // Byte*8 + Bit unter pos oder -1
 
 protected:
+    bool event(QEvent* e) override;
     void paintEvent(QPaintEvent*) override;
     void mousePressEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
 
 private:
     QRect rowRect(int byteIndex, int bit) const;
-    int hitTest(const QPoint& pos) const;   // byteIndex*8+bit oder -1
 
     PlcController* plc_;
     ModuleConfig cfg_;

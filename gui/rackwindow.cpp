@@ -3,11 +3,11 @@
 #include "mainwindow.h"
 #include "plccontroller.h"
 
+#include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QInputDialog>
-#include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QScrollArea>
@@ -75,8 +75,6 @@ RackWindow::RackWindow(PlcController* plc, MainWindow* editor)
     QMenu* winMenu = menuBar()->addMenu(tr("&Fenster"));
     winMenu->addAction(tr("&Editor (PG)"), QKeySequence(Qt::CTRL | Qt::Key_E), this, &RackWindow::showEditor);
 
-    cycleLabel_ = new QLabel;
-    statusBar()->addPermanentWidget(cycleLabel_);
     statusBar()->showMessage(tr("Rechtsklick auf eine Baugruppe: Adresse, Taster, verschieben oder ziehen"), 8000);
 
     restoreModules();
@@ -141,6 +139,28 @@ void RackWindow::showModuleMenu(DigitalModule* m, const QPoint& globalPos)
     const ModuleConfig cfg = m->config();
     const bool in = cfg.kind == ModuleKind::DigitalIn;
     QMenu menu;
+    if (in) {
+        // Einzelner Eingang unter dem Mauszeiger
+        const int idx = m->bitAt(m->mapFromGlobal(globalPos));
+        if (idx >= 0) {
+            const QString name = QStringLiteral("E %1.%2").arg(cfg.address + idx / 8).arg(idx % 8);
+            const uint32_t bitMask = 1u << idx;
+            auto* group = new QActionGroup(&menu);
+            QAction* sw = menu.addAction(tr("%1 als Schalter").arg(name), this,
+                                         [this, m, bitMask] { setMomentaryMask(m, m->config().momentaryMask & ~bitMask); });
+            QAction* ta = menu.addAction(tr("%1 als Taster").arg(name), this,
+                                         [this, m, bitMask] { setMomentaryMask(m, m->config().momentaryMask | bitMask); });
+            for (QAction* a : {sw, ta}) {
+                a->setCheckable(true);
+                group->addAction(a);
+            }
+            (cfg.isMomentary(idx) ? ta : sw)->setChecked(true);
+            menu.addSeparator();
+        }
+        menu.addAction(tr("Alle Eingänge als Schalter"), this, [this, m] { setMomentaryMask(m, 0); });
+        menu.addAction(tr("Alle Eingänge als Taster"), this, [this, m] { setMomentaryMask(m, m->config().allBits()); });
+        menu.addSeparator();
+    }
     menu.addAction(tr("Anfangsadresse ändern …"), this, [this, m, in] {
         ModuleConfig c = m->config();
         bool ok = false;
@@ -152,26 +172,25 @@ void RackWindow::showModuleMenu(DigitalModule* m, const QPoint& globalPos)
         m->setConfig(c);
         saveModules();
     });
-    if (in) {
-        QAction* t = menu.addAction(tr("Taster statt Schalter"));
-        t->setCheckable(true);
-        t->setChecked(cfg.momentary);
-        connect(t, &QAction::toggled, this, [this, m](bool on) {
-            ModuleConfig c = m->config();
-            if (on)     // eingeschaltete Schalter lösen
-                for (int b = 0; b < c.bytes; ++b)
-                    for (int bit = 0; bit < 8; ++bit) plc_->cpu().setInput(c.address + b, bit, false);
-            c.momentary = on;
-            m->setConfig(c);
-            saveModules();
-        });
-    }
     menu.addSeparator();
     menu.addAction(tr("Nach links"), this, [this, m] { moveModule(m, -1); });
     menu.addAction(tr("Nach rechts"), this, [this, m] { moveModule(m, +1); });
     menu.addSeparator();
     menu.addAction(tr("Baugruppe ziehen"), this, [this, m] { removeModule(m); });
     menu.exec(globalPos);
+}
+
+void RackWindow::setMomentaryMask(DigitalModule* m, uint32_t mask)
+{
+    ModuleConfig c = m->config();
+    mask &= c.allBits();
+    // Eingänge, die zum Taster werden, liefern 0, bis der Taster gedrückt wird
+    const uint32_t becomeMomentary = mask & ~c.momentaryMask;
+    for (int i = 0; i < c.bitCount(); ++i)
+        if ((becomeMomentary >> i) & 1u) plc_->cpu().setInput(c.address + i / 8, i % 8, false);
+    c.momentaryMask = mask;
+    m->setConfig(c);
+    saveModules();
 }
 
 void RackWindow::removeModule(DigitalModule* m)
@@ -217,11 +236,11 @@ void RackWindow::saveModules() const
     QStringList list;
     for (const DigitalModule* m : modules_) {
         const ModuleConfig& c = m->config();
-        list << QStringLiteral("%1,%2,%3,%4")
+        list << QStringLiteral("%1,%2,%3,m:%4")
                     .arg(c.kind == ModuleKind::DigitalIn ? QStringLiteral("DE") : QStringLiteral("DA"))
                     .arg(c.bytes)
                     .arg(c.address)
-                    .arg(c.momentary ? 1 : 0);
+                    .arg(c.momentaryMask & c.allBits(), 8, 16, QLatin1Char('0'));
     }
     QSettings().setValue(QStringLiteral("rack/modules"), list);
 }
@@ -239,7 +258,12 @@ void RackWindow::restoreModules()
         c.bytes = std::clamp(f[1].toInt(), 1, 4);
         if (c.bytes == 3) c.bytes = 4;
         c.address = std::clamp(f[2].toInt(), 0, s5::Cpu::kIoBytes - c.bytes);
-        c.momentary = f[3] == QLatin1String("1");
+        // 4. Feld: "m:<Hex>" = Taster je Eingang; ältere Einstellungen: "1" = alle Taster
+        if (f[3].startsWith(QLatin1String("m:")))
+            c.momentaryMask = f[3].mid(2).toUInt(nullptr, 16) & c.allBits();
+        else
+            c.momentaryMask = f[3] == QLatin1String("1") ? c.allBits() : 0;
+        if (c.kind == ModuleKind::DigitalOut) c.momentaryMask = 0;
         addModule(c);
     }
     relayout();
@@ -249,11 +273,6 @@ void RackWindow::refresh()
 {
     cpuModule_->update();
     for (DigitalModule* m : modules_) m->update();
-    const s5::Cpu& cpu = plc_->cpu();
-    if (cpu.state() == s5::CpuState::Run)
-        cycleLabel_->setText(tr("Zyklus %1   Bearbeitungszeit %2 ms").arg(cpu.cycleCount()).arg(plc_->cycleTimeMs(), 0, 'f', 3));
-    else
-        cycleLabel_->setText(cpu.state() == s5::CpuState::Halt ? tr("Einzelschritt") : QString());
 }
 
 void RackWindow::closeEvent(QCloseEvent* e)

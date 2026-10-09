@@ -29,7 +29,7 @@ open build/S5Sim.app
 - **Baugruppenträger** (Hauptfenster) im Stil der S5-115U: CPU mit Betriebsartenschalter RUN/STOP,
   Urlöschen-Taster (nur im STOP), LEDs RUN/STOP/STÖRUNG und PG-Taster, der den Editor öffnet
 - **Digitalein- und -ausgaben** DE/DA mit 8, 16 oder 32 Bit stecken, ziehen und verschieben; Bits senkrecht mit
-  grünen Status-LEDs, Eingaben mit Kippschaltern oder Tastern; Anfangsadresse je Baugruppe einstellbar
+  Status-LEDs (Eingänge grün, Ausgänge rot), je Eingang Kippschalter oder Taster (auch gemischt); Anfangsadresse je Baugruppe einstellbar
 - **Editor (PG)** als eigenes Fenster: AWL mit Status Baustein, Einzelschritt, Variablen, Meldungen, Maschinencode
 
 ## Was die CPU kann

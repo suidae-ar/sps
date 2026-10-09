@@ -10,7 +10,6 @@
 class MainWindow;
 class PlcController;
 class QHBoxLayout;
-class QLabel;
 
 class RackWindow : public QMainWindow {
     Q_OBJECT
@@ -28,6 +27,7 @@ private:
     void showAddMenu(const QPoint& globalPos);
     void showModuleMenu(rack::DigitalModule* m, const QPoint& globalPos);
     void removeModule(rack::DigitalModule* m);
+    void setMomentaryMask(rack::DigitalModule* m, uint32_t mask);
     void moveModule(rack::DigitalModule* m, int delta);
     void relayout();
     void saveModules() const;
@@ -42,5 +42,4 @@ private:
     rack::CpuModule* cpuModule_;
     rack::EmptySlot* emptySlot_;
     std::vector<rack::DigitalModule*> modules_;
-    QLabel* cycleLabel_;
 };

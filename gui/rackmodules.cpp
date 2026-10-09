@@ -4,11 +4,13 @@
 
 #include <QContextMenuEvent>
 #include <QDateTime>
+#include <QHelpEvent>
 #include <QLinearGradient>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRadialGradient>
+#include <QToolTip>
 
 namespace rack {
 
@@ -343,7 +345,7 @@ QRect DigitalModule::rowRect(int byteIndex, int bit) const
     return QRect(12 + byteIndex * kColumnWidth, kRowsTop + bit * kRowHeight, kColumnWidth - 8, kRowHeight);
 }
 
-int DigitalModule::hitTest(const QPoint& pos) const
+int DigitalModule::bitAt(const QPoint& pos) const
 {
     for (int b = 0; b < cfg_.bytes; ++b)
         for (int bit = 0; bit < 8; ++bit)
@@ -356,10 +358,17 @@ void DigitalModule::paintEvent(QPaintEvent*)
     QPainter p(this);
     const bool in = cfg_.kind == ModuleKind::DigitalIn;
     const QString title = QStringLiteral("%1 %2").arg(in ? QStringLiteral("DE") : QStringLiteral("DA")).arg(cfg_.bytes * 8);
-    const QString subtitle = in ? (cfg_.momentary ? tr("DC 24 V · Taster") : tr("DC 24 V")) : tr("DC 24 V / 0,5 A");
+    QString subtitle = tr("DC 24 V / 0,5 A");
+    if (in) {
+        const uint32_t mask = cfg_.momentaryMask & cfg_.allBits();
+        subtitle = mask == 0 ? tr("DC 24 V · Schalter")
+                 : mask == cfg_.allBits() ? tr("DC 24 V · Taster")
+                                          : tr("DC 24 V · Schalter/Taster");
+    }
     paintFrame(p, title, subtitle);
 
     const s5::Cpu& cpu = plc_->cpu();
+    const QColor ledColor = in ? QColor(0x3c, 0xd0, 0x3c) : QColor(0xf0, 0x3a, 0x2a);  // Eingänge grün, Ausgänge rot
     QFont f = font();
     for (int b = 0; b < cfg_.bytes; ++b) {
         const int byte = cfg_.address + b;
@@ -388,15 +397,15 @@ void DigitalModule::paintEvent(QPaintEvent*)
         for (int bit = 0; bit < 8; ++bit) {
             const QRect r = rowRect(b, bit);
             const bool on = (value >> bit) & 1;
-            drawLed(p, QPointF(r.left() + 13, r.center().y()), 6.5, on, QColor(0x3c, 0xd0, 0x3c));
+            drawLed(p, QPointF(r.left() + 13, r.center().y()), 6.5, on, ledColor);
             p.setPen(kPaperText);
             p.drawText(QRect(r.left() + 25, r.top(), 32, r.height()), Qt::AlignVCenter | Qt::AlignLeft,
                        QStringLiteral("%1.%2").arg(byte).arg(bit));
             if (in) {
                 const QRectF sw(r.right() - 22, r.top() + 5, 18, r.height() - 10);
-                if (cfg_.momentary)
+                if (cfg_.isMomentary(b * 8 + bit))
                     drawPushButton(p, QRectF(r.right() - 24, r.center().y() - 11, 22, 22), pressed_ == b * 8 + bit,
-                                   QColor(0x2e, 0x7d, 0x32));
+                                   QColor(0x9a, 0x9e, 0xa2));     // neutrale Kappe, nicht mit LED verwechselbar
                 else
                     drawToggle(p, sw, on);
             }
@@ -404,14 +413,34 @@ void DigitalModule::paintEvent(QPaintEvent*)
     }
 }
 
+bool DigitalModule::event(QEvent* e)
+{
+    if (e->type() == QEvent::ToolTip) {
+        auto* he = static_cast<QHelpEvent*>(e);
+        const int hit = bitAt(he->pos());
+        if (hit < 0) {
+            QToolTip::hideText();
+            e->ignore();
+            return true;
+        }
+        const bool in = cfg_.kind == ModuleKind::DigitalIn;
+        QString text = QStringLiteral("%1 %2.%3").arg(in ? QStringLiteral("E") : QStringLiteral("A"))
+                           .arg(cfg_.address + hit / 8).arg(hit % 8);
+        if (in) text += cfg_.isMomentary(hit) ? tr(" – Taster") : tr(" – Schalter");
+        QToolTip::showText(he->globalPos(), text, this);
+        return true;
+    }
+    return ModuleWidget::event(e);
+}
+
 void DigitalModule::mousePressEvent(QMouseEvent* e)
 {
     if (e->button() != Qt::LeftButton || cfg_.kind != ModuleKind::DigitalIn) return;
-    const int hit = hitTest(e->position().toPoint());
+    const int hit = bitAt(e->position().toPoint());
     if (hit < 0) return;
     const int byte = cfg_.address + hit / 8, bit = hit % 8;
     s5::Cpu& cpu = plc_->cpu();
-    if (cfg_.momentary) {
+    if (cfg_.isMomentary(hit)) {
         pressed_ = hit;
         cpu.setInput(byte, bit, true);
     } else {
