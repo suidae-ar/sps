@@ -1,5 +1,6 @@
 #include "rackmodules.h"
 
+#include "pilink.h"
 #include "plccontroller.h"
 
 #include <QContextMenuEvent>
@@ -10,6 +11,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QRadialGradient>
+#include <QTimer>
 #include <QToolTip>
 
 namespace rack {
@@ -199,6 +201,13 @@ void CpuModule::setFamilyName(const QString& name)
     update();
 }
 
+void CpuModule::setPeripheryFault(bool fault)
+{
+    if (fault == peripheryFault_) return;
+    peripheryFault_ = fault;
+    update();
+}
+
 QRect CpuModule::modeSwitchRect() const { return QRect(40, 222, 34, 62); }
 QRect CpuModule::resetSwitchRect() const { return QRect(126, 222, 34, 62); }
 QRect CpuModule::pgButtonRect() const { return QRect(118, 352, 44, 44); }
@@ -231,7 +240,7 @@ void CpuModule::paintEvent(QPaintEvent*)
     const Lamp lamps[] = {
         {"RUN", st == s5::CpuState::Run || (st == s5::CpuState::Halt && blink), QColor(0x3c, 0xd0, 0x3c)},
         {"STOP", st == s5::CpuState::Stop, QColor(0xf0, 0x3a, 0x2a)},
-        {"STÖRUNG", fault && blink, QColor(0xf0, 0x3a, 0x2a)},
+        {"STÖRUNG", (fault && blink) || peripheryFault_, QColor(0xf0, 0x3a, 0x2a)},
     };
     f.setLetterSpacing(QFont::AbsoluteSpacing, 0);
     f.setPointSizeF(10);
@@ -456,6 +465,230 @@ void DigitalModule::mouseReleaseEvent(QMouseEvent*)
         pressed_ = -1;
         update();
     }
+}
+
+// ------------------------------------------------------------------ Raspberry-Pi-E/A
+
+PiModule::PiModule(PlcController* plc, const PiConfig& cfg, QWidget* parent)
+    : ModuleWidget(parent)
+    , plc_(plc)
+    , link_(new PiLink(this))
+    , outTimer_(new QTimer(this))
+{
+    connect(link_, &PiLink::inputsChanged, this, &PiModule::applyInputs);
+    connect(link_, &PiLink::stateChanged, this, [this] {
+        update();
+        emit statusChanged();
+    });
+    outTimer_->setInterval(10);
+    connect(outTimer_, &QTimer::timeout, this, &PiModule::updateOutputs);
+    outTimer_->start();
+    setConfig(cfg);
+    link_->start();
+}
+
+PiModule::~PiModule()
+{
+    link_->stop();      // BYE → s5io schaltet die Ausgänge ab
+    clearInputs();
+}
+
+int PiModule::widthFor(const PiConfig& cfg)
+{
+    return 24 + std::max(1, cfg.inBytes + cfg.outBytes) * kColumnWidth;
+}
+
+bool PiModule::online() const
+{
+    return link_->state() == PiLink::State::Online;
+}
+
+void PiModule::setConfig(const PiConfig& cfg)
+{
+    clearInputs();
+    cfg_ = cfg;
+    setFixedSize(widthFor(cfg_), kHeight);
+    link_->setChannels(cfg_.inputs(), cfg_.outputs());
+    link_->setTarget(cfg_.host, static_cast<quint16>(cfg_.port));
+    applyInputs(link_->inputs());
+    update();
+}
+
+void PiModule::applyInputs(uint32_t mask)
+{
+    s5::Cpu& cpu = plc_->cpu();
+    for (int ch = 0; ch < cfg_.inBytes * 8; ++ch)
+        if (cfg_.inGpio[ch] >= 0) cpu.setInput(cfg_.inAddress + ch / 8, ch % 8, (mask >> ch) & 1u);
+    update();
+}
+
+void PiModule::clearInputs()
+{
+    applyInputs(0);
+}
+
+void PiModule::updateOutputs()
+{
+    const s5::Cpu& cpu = plc_->cpu();
+    uint32_t mask = 0;
+    for (int ch = 0; ch < cfg_.outBytes * 8; ++ch)
+        if (cfg_.outGpio[ch] >= 0 && ((cpu.outputByte(cfg_.outAddress + ch / 8) >> (ch % 8)) & 1u)) mask |= 1u << ch;
+    link_->setOutputs(mask);
+}
+
+QRect PiModule::rowRect(int column, int bit) const
+{
+    return QRect(12 + column * kColumnWidth, kRowsTop + bit * kRowHeight, kColumnWidth - 8, kRowHeight);
+}
+
+bool PiModule::event(QEvent* e)
+{
+    if (e->type() == QEvent::ToolTip) {
+        auto* he = static_cast<QHelpEvent*>(e);
+        QString text;
+        for (int c = 0; c < columns() && text.isEmpty(); ++c) {
+            for (int bit = 0; bit < 8; ++bit) {
+                if (!rowRect(c, bit).contains(he->pos())) continue;
+                const bool in = c < cfg_.inBytes;
+                const int ch = (in ? c : c - cfg_.inBytes) * 8 + bit;
+                const int gpio = in ? cfg_.inGpio[ch] : cfg_.outGpio[ch];
+                text = in ? cfg_.inputName(ch) : cfg_.outputName(ch);
+                if (gpio < 0) {
+                    text += tr(" – nicht belegt (nur auf dem Bildschirm)");
+                } else {
+                    text += tr(" – GPIO %1 (Pin %2)").arg(gpio).arg(s5io::physicalPin(gpio));
+                    if (in && cfg_.inBias[ch] == s5io::Bias::PullUp) text += tr(", Pull-up");
+                    if (in && cfg_.inBias[ch] == s5io::Bias::PullDown) text += tr(", Pull-down");
+                    if (in && ((cfg_.inInvert >> ch) & 1u)) text += tr(", invertiert");
+                }
+                break;
+            }
+        }
+        if (text.isEmpty()) {
+            text = tr("Raspberry Pi %1:%2\n%3").arg(cfg_.host).arg(cfg_.port).arg(link_->statusText());
+            if (!link_->model().isEmpty()) text += QStringLiteral("\n") + link_->model();
+        }
+        QToolTip::showText(he->globalPos(), text, this);
+        return true;
+    }
+    return ModuleWidget::event(e);
+}
+
+void PiModule::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    // Platine
+    const QRectF r = QRectF(rect()).adjusted(1, 1, -1, -1);
+    QLinearGradient g(r.topLeft(), r.bottomLeft());
+    g.setColorAt(0, QColor(0x2a, 0x7a, 0x4a));
+    g.setColorAt(1, QColor(0x17, 0x4f, 0x2f));
+    p.setPen(QPen(QColor(0x0c, 0x2a, 0x18), 1.5));
+    p.setBrush(g);
+    p.drawRoundedRect(r, 6, 6);
+    // Befestigungslöcher mit Lötring
+    for (const QPointF& c : {QPointF(14, 14), QPointF(width() - 14, 14), QPointF(14, height() - 14),
+                             QPointF(width() - 14, height() - 14)}) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0xc8, 0xa8, 0x50));
+        p.drawEllipse(c, 6, 6);
+        p.setBrush(QColor(0x26, 0x28, 0x2b));
+        p.drawEllipse(c, 3.2, 3.2);
+    }
+
+    QFont f = font();
+    f.setBold(true);
+    f.setPointSizeF(13);
+    p.setFont(f);
+    p.setPen(QColor(0xf0, 0xf0, 0xf0));
+    p.drawText(QRectF(0, 22, width(), 22), Qt::AlignCenter, tr("Raspberry Pi"));
+
+    // Verbindungsanzeige
+    const bool blink = (QDateTime::currentMSecsSinceEpoch() / 400) % 2 == 0;
+    QColor ledColor(0x80, 0x80, 0x80);
+    bool ledOn = false;
+    QString state;
+    switch (link_->state()) {
+    case PiLink::State::Online:
+        ledColor = QColor(0x3c, 0xd0, 0x3c);
+        ledOn = true;
+        state = link_->simulated() ? tr("verbunden (Sim.)") : tr("verbunden");
+        break;
+    case PiLink::State::Connecting:
+    case PiLink::State::Configuring:
+        ledColor = QColor(0xf0, 0xc0, 0x20);
+        ledOn = blink;
+        state = tr("verbinde …");
+        break;
+    case PiLink::State::Failed:
+        ledColor = QColor(0xf0, 0x3a, 0x2a);
+        ledOn = blink;
+        state = tr("keine Verbindung");
+        break;
+    case PiLink::State::Off: state = tr("aus"); break;
+    }
+    f.setBold(false);
+    f.setPointSizeF(9.5);
+    p.setFont(f);
+    const QString line = QStringLiteral("%1 · %2").arg(state, cfg_.host);
+    const QString shown = p.fontMetrics().elidedText(line, Qt::ElideRight, width() - 44);
+    const int tw = p.fontMetrics().horizontalAdvance(shown);
+    const int x0 = (width() - tw - 16) / 2;
+    drawLed(p, QPointF(x0 + 5, 51), 5, ledOn, ledColor);
+    p.setPen(QColor(0xd8, 0xe8, 0xdc));
+    p.drawText(QRectF(x0 + 16, 43, tw + 2, 16), Qt::AlignVCenter | Qt::AlignLeft, shown);
+
+    if (columns() == 0) {
+        p.drawText(QRectF(10, 0, width() - 20, height()), Qt::AlignCenter | Qt::TextWordWrap,
+                   tr("keine Kanäle –\nRechtsklick:\nEinstellungen"));
+    }
+
+    const s5::Cpu& cpu = plc_->cpu();
+    for (int c = 0; c < columns(); ++c) {
+        const bool in = c < cfg_.inBytes;
+        const int byteIdx = in ? c : c - cfg_.inBytes;
+        const int byte = (in ? cfg_.inAddress : cfg_.outAddress) + byteIdx;
+        if (byte >= s5::Cpu::kIoBytes) break;
+        const QRect col(12 + c * kColumnWidth, kRowsTop - 26, kColumnWidth - 8, 8 * kRowHeight + 32);
+
+        p.setPen(QPen(QColor(0x9a, 0x94, 0x80), 1));
+        p.setBrush(kPaper);
+        p.drawRoundedRect(QRectF(col).adjusted(0.5, 0.5, -0.5, -0.5), 2, 2);
+        f.setBold(true);
+        f.setPointSizeF(10.5);
+        p.setFont(f);
+        p.setPen(kPaperText);
+        p.drawText(QRect(col.left(), col.top() + 3, col.width(), 20), Qt::AlignCenter,
+                   QStringLiteral("%1 %2").arg(in ? QStringLiteral("EB") : QStringLiteral("AB")).arg(byte));
+        p.setPen(QColor(0x9a, 0x94, 0x80));
+        p.drawLine(col.left() + 6, col.top() + 24, col.right() - 6, col.top() + 24);
+
+        const uint8_t value = in ? cpu.inputByte(byte) : cpu.outputByte(byte);
+        for (int bit = 0; bit < 8; ++bit) {
+            const QRect rr = rowRect(c, bit);
+            const int ch = byteIdx * 8 + bit;
+            const int gpio = in ? cfg_.inGpio[ch] : cfg_.outGpio[ch];
+            const bool assigned = gpio >= 0;
+            const bool on = assigned && ((value >> bit) & 1);
+            drawLed(p, QPointF(rr.left() + 13, rr.center().y()), 6.5, on,
+                    in ? QColor(0x3c, 0xd0, 0x3c) : QColor(0xf0, 0x3a, 0x2a));
+            f.setBold(false);
+            f.setPointSizeF(10);
+            p.setFont(f);
+            p.setPen(assigned ? kPaperText : QColor(0xa8, 0xa2, 0x90));
+            p.drawText(QRect(rr.left() + 25, rr.top(), 32, rr.height()), Qt::AlignVCenter | Qt::AlignLeft,
+                       QStringLiteral("%1.%2").arg(byte).arg(bit));
+            f.setPointSizeF(8);
+            p.setFont(f);
+            p.drawText(QRect(rr.left() + 25, rr.top(), rr.width() - 27, rr.height()), Qt::AlignVCenter | Qt::AlignRight,
+                       assigned ? QStringLiteral("GP%1").arg(gpio) : QStringLiteral("—"));
+        }
+    }
+    f.setPointSizeF(9.5);
+    p.setFont(f);
+    p.setPen(QColor(0xb8, 0xd0, 0xc0));
+    p.drawText(QRectF(0, height() - 40, width(), 14), Qt::AlignCenter, tr("Steckplatz %1").arg(slot_));
 }
 
 // ------------------------------------------------------------------ Leerplatz, Träger

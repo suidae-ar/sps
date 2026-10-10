@@ -117,7 +117,45 @@ Zwei Baugruppen dürfen dieselbe Adresse haben – sie zeigen dann dieselben Bit
 
 Bestückung und Fensterposition werden beim Beenden gespeichert.
 
-### 3.3 Statuszeile
+### 3.3 Raspberry-Pi-E/A
+
+Mit der Baugruppe **Raspberry-Pi-E/A** liegen Ein- und Ausgänge an echten GPIO-Pins eines Raspberry Pi. Auf dem
+Pi läuft dafür der Dienst `s5io` ([Installation](raspi/installation.md), Hintergrund im
+[Plan](raspi/plan.md)). S5Sim kann auf dem Mac laufen oder auf demselben Pi (Rechner `127.0.0.1`).
+
+**Stecken:** *Baugruppe → Raspberry-Pi-E/A stecken …* öffnet die Einstellungen:
+
+| Einstellung | Bedeutung |
+|---|---|
+| Rechner, Port | Name oder IP-Adresse des Pi, Port von `s5io` (Standard 2511) |
+| Eingänge ab / Ausgänge ab | erstes Byte (EB/AB) und Anzahl (keine, 1 oder 2 Byte) |
+| Entprellzeit | für alle Eingänge, in ms |
+| Tabelle Eingänge | je Bit: GPIO-Pin (mit Nummer auf der Stiftleiste), Pull-Widerstand, invertiert |
+| Tabelle Ausgänge | je Bit: GPIO-Pin |
+| Standardbelegung | die Belegung aus der [Pinbelegung](raspi/pinbelegung.md) |
+
+Doppelt vergebene Pins werden rot gemeldet und lassen sich nicht übernehmen; Pins mit Sonderfunktion
+(I²C, UART, SPI) erzeugen eine Warnung. Ein Taster gegen Masse braucht „Pull-up“ und „invertiert“.
+
+**Darstellung:** grüne Platine mit Verbindungs-LED – grün = verbunden, gelb blinkend = verbinde, rot
+blinkend = keine Verbindung. Jedes Bit zeigt seinen Pin („GP17“); nicht belegte Bits sind ausgegraut („—“)
+und existieren nur auf dem Bildschirm. Die Eingänge der Pi-Baugruppe lassen sich nicht anklicken – sie kommen
+von der Hardware. Der Tooltip eines Bits nennt Pin, Pull-Widerstand und Invertierung. Rechtsklick:
+*Einstellungen …*, *Verbindung neu aufbauen*, verschieben, ziehen.
+
+**Verbindung weg:** Die Pi-Eingänge gehen auf 0, an der CPU leuchtet **STÖRUNG**, alle 2 s versucht S5Sim
+die Verbindung neu aufzubauen. `s5io` schaltet seinerseits die Ausgänge ab, sobald S5Sim 0,5 s lang nichts
+sendet oder sich abmeldet.
+
+**Hinweise beim Übersetzen:** Steckt eine Pi-Baugruppe, meldet der Editor unter *Meldungen* (orange), welche
+im Programm verwendeten Ein- und Ausgänge nicht an einem Pi-Pin liegen, z.B.
+*„Nur auf dem Bildschirm, nicht am Raspberry Pi: E 1.0, E 1.1“* oder *„Auf der Raspberry-Pi-Baugruppe nicht
+belegt: E 0.6“*. Das sind Hinweise, keine Fehler – gemischt mit virtuellen Karten zu testen bleibt möglich.
+
+Liegen eine virtuelle Eingabekarte und die Pi-Baugruppe auf derselben Adresse, gewinnt der Pi: Er
+überschreibt seine belegten Bits bei jeder Meldung.
+
+### 3.4 Statuszeile
 
 Die Statuszeile zeigt Hinweise und Fehlermeldungen (z.B. „STOP – Zeile 12: …“). Zyklusnummer und
 Bearbeitungszeit stehen in der Statuszeile des Editors.
@@ -564,6 +602,7 @@ Die Beispiele verwenden die Grundbestückung (Eingänge EB 0/EB 1, Ausgänge AB 
 | *Ungültiger Zeitwert in AKKU 1* | Vor `SE T …` usw. wurde kein `KT`-Wert geladen. |
 | *Zykluszeit überschritten (Endlosschleife?)* | Ein Sprung führt immer wieder zurück; Abbruchbedingung prüfen. |
 | *FB n: Parameter nicht versorgt: …* | Beim Aufruf fehlen Parameterzeilen. |
+| Pi-Baugruppe: *keine Verbindung*, *Verbindung abgelehnt* | siehe [Fehlersuche bei der Installation](raspi/installation.md#fehlersuche) |
 | *… gibt es nur bei S5-135U/155U (gesteckte CPU: …)* | Die Operation fehlt auf der gesteckten CPU: CPU tauschen oder Operation ersetzen. |
 
 **Tipps**

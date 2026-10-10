@@ -1,6 +1,6 @@
 # S5Sim – Simulator für SIMATIC-S5-Programme (AWL)
 
-Dokumentation: [Programmbeschreibung](docs/beschreibung.md) · [Handbuch](docs/handbuch.md) · [Raspberry Pi (Planung)](docs/raspi/README.md)
+Dokumentation: [Programmbeschreibung](docs/beschreibung.md) · [Handbuch](docs/handbuch.md) · [Raspberry Pi](docs/raspi/README.md)
 
 Desktop-Simulator für STEP-5-Programme in Anweisungsliste, gebaut mit C++20 und Qt 6.
 
@@ -12,6 +12,7 @@ cmake -S . -B build
 cmake --build build -j8
 ./build/s5core_tests           # Tests von Parser und CPU
 ./build/s5mc5_tests            # Tests des MC5-Übersetzers
+./build/s5io_tests             # Tests von s5io (Protokoll, Dienst mit Simulation)
 open build/S5Sim.app
 ```
 
@@ -20,6 +21,7 @@ open build/S5Sim.app
 | Verzeichnis | Inhalt |
 |---|---|
 | `core/` | Kern ohne Qt: `parser` (AWL → Bausteine), `cpu` (Zyklus, VKE, AKKU, Zeiten, Zähler, DBs), `mc5` (Assembler/Disassembler MC5) |
+| `s5io/` | E/A-Dienst für den Raspberry Pi (ohne Qt): Protokoll, Server, GPIO über libgpiod 2 bzw. Simulation |
 | `gui/` | Qt-Oberfläche: Baugruppenträger (CPU, E/A-Baugruppen), Editor mit Status-Spalte, Variablentabelle, Maschinencode |
 | `examples/` | Beispielprogramme (auch im Menü *Datei → Beispiele*) |
 | `tests/` | Tests für Parser und CPU |
@@ -30,6 +32,8 @@ open build/S5Sim.app
   Urlöschen-Taster (nur im STOP), LEDs RUN/STOP/STÖRUNG und PG-Taster, der den Editor öffnet
 - **Digitalein- und -ausgaben** DE/DA mit 8, 16 oder 32 Bit stecken, ziehen und verschieben; Bits senkrecht mit
   Status-LEDs (Eingänge grün, Ausgänge rot), je Eingang Kippschalter oder Taster (auch gemischt); Anfangsadresse je Baugruppe einstellbar
+- **Raspberry-Pi-E/A:** Ein- und Ausgänge an echten GPIO-Pins eines Raspberry Pi über den Dienst `s5io`
+  (Pinbelegung je Bit, Verbindungs-LED, Watchdog, Hinweise auf Operanden ohne echten Pin) – siehe [docs/raspi](docs/raspi/README.md)
 - **Editor (PG)** als eigenes Fenster: AWL mit Status Baustein, Einzelschritt, Variablen, Meldungen, Maschinencode
 
 ## Was die CPU kann

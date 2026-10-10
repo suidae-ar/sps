@@ -1,6 +1,8 @@
 #include "rackwindow.h"
 
 #include "mainwindow.h"
+#include "piconfigdialog.h"
+#include "pilink.h"
 #include "plccontroller.h"
 
 #include <QActionGroup>
@@ -15,9 +17,13 @@
 #include <QStatusBar>
 #include <QTimer>
 
+#include <set>
+
 using rack::DigitalModule;
 using rack::ModuleConfig;
 using rack::ModuleKind;
+using rack::ModuleWidget;
+using rack::PiModule;
 
 RackWindow::RackWindow(PlcController* plc, MainWindow* editor)
     : plc_(plc)
@@ -72,15 +78,14 @@ RackWindow::RackWindow(PlcController* plc, MainWindow* editor)
             statusBar()->showMessage(line > 0 ? tr("STOP – Zeile %1: %2").arg(line).arg(msg) : tr("STOP – %1").arg(msg));
     });
 
+    connect(qApp, &QCoreApplication::aboutToQuit, this, &RackWindow::shutdownPeripherals);
+
+    // Prüfung beim Übersetzen: Ein-/Ausgänge, die nicht am Raspberry Pi anliegen
+    editor_->setHardwareCheck([this](const s5::Program& p) { return hardwareWarnings(p); });
+
     // Menüs
     QMenu* rackMenu = menuBar()->addMenu(tr("&Baugruppe"));
-    for (int bytes : {1, 2, 4})
-        rackMenu->addAction(tr("Digitaleingabe DE %1 stecken").arg(bytes * 8), this,
-                            [this, bytes] { addModuleOfKind(ModuleKind::DigitalIn, bytes); });
-    rackMenu->addSeparator();
-    for (int bytes : {1, 2, 4})
-        rackMenu->addAction(tr("Digitalausgabe DA %1 stecken").arg(bytes * 8), this,
-                            [this, bytes] { addModuleOfKind(ModuleKind::DigitalOut, bytes); });
+    addModuleActions(rackMenu);
     rackMenu->addSeparator();
     addCpuActions(rackMenu->addMenu(tr("&CPU tauschen")));
     rackMenu->addSeparator();
@@ -89,7 +94,8 @@ RackWindow::RackWindow(PlcController* plc, MainWindow* editor)
     QMenu* winMenu = menuBar()->addMenu(tr("&Fenster"));
     winMenu->addAction(tr("&Editor (PG)"), QKeySequence(Qt::CTRL | Qt::Key_E), this, &RackWindow::showEditor);
 
-    statusBar()->showMessage(tr("Rechtsklick auf die CPU: CPU tauschen · auf eine E/A-Baugruppe: Adresse, Schalter/Taster, verschieben, ziehen"), 8000);
+    statusBar()->showMessage(tr("Rechtsklick auf die CPU: CPU tauschen · auf eine E/A-Baugruppe: Einstellungen, "
+                                "verschieben, ziehen"), 8000);
 
     restoreModules();
 
@@ -109,19 +115,44 @@ void RackWindow::showEditor()
     editor_->activateWindow();
 }
 
-void RackWindow::addModule(const ModuleConfig& cfg)
+// ---------------------------------------------------------------- Baugruppen stecken
+
+void RackWindow::registerModule(ModuleWidget* m)
 {
-    auto* m = new DigitalModule(plc_, cfg);
-    connect(m, &DigitalModule::contextRequested, this, [this, m](const QPoint& pos) { showModuleMenu(m, pos); });
+    connect(m, &ModuleWidget::contextRequested, this, [this, m](const QPoint& pos) { showModuleMenu(m, pos); });
     modules_.push_back(m);
     relayout();
 }
 
-int RackWindow::nextFreeAddress(ModuleKind kind) const
+void RackWindow::addDigital(const ModuleConfig& cfg)
+{
+    registerModule(new DigitalModule(plc_, cfg));
+}
+
+void RackWindow::addPi(const PiConfig& cfg)
+{
+    auto* m = new PiModule(plc_, cfg);
+    connect(m, &PiModule::statusChanged, this, [this, m] {
+        const PiLink* l = m->link();
+        if (l->state() == PiLink::State::Online || l->state() == PiLink::State::Failed)
+            statusBar()->showMessage(tr("Raspberry Pi %1: %2").arg(m->config().host, l->statusText()), 6000);
+    });
+    registerModule(m);
+}
+
+int RackWindow::nextFreeAddress(bool input) const
 {
     int next = 0;
-    for (const DigitalModule* m : modules_)
-        if (m->config().kind == kind) next = std::max(next, m->config().address + m->config().bytes);
+    for (const ModuleWidget* w : modules_) {
+        if (auto* d = qobject_cast<const DigitalModule*>(w)) {
+            if ((d->config().kind == ModuleKind::DigitalIn) == input)
+                next = std::max(next, d->config().address + d->config().bytes);
+        } else if (auto* p = qobject_cast<const PiModule*>(w)) {
+            const PiConfig& c = p->config();
+            if (input && c.inBytes) next = std::max(next, c.inAddress + c.inBytes);
+            if (!input && c.outBytes) next = std::max(next, c.outAddress + c.outBytes);
+        }
+    }
     return next;
 }
 
@@ -130,21 +161,41 @@ void RackWindow::addModuleOfKind(ModuleKind kind, int bytes)
     ModuleConfig cfg;
     cfg.kind = kind;
     cfg.bytes = bytes;
-    cfg.address = std::min(nextFreeAddress(kind), s5::Cpu::kIoBytes - bytes);
-    addModule(cfg);
+    cfg.address = std::min(nextFreeAddress(kind == ModuleKind::DigitalIn), s5::Cpu::kIoBytes - bytes);
+    addDigital(cfg);
     saveModules();
+    reportHardware();
+}
+
+void RackWindow::addPiInteractive()
+{
+    PiConfig cfg;
+    cfg.inAddress = std::min(nextFreeAddress(true), s5::Cpu::kIoBytes - 1);
+    cfg.outAddress = std::min(nextFreeAddress(false), s5::Cpu::kIoBytes - 1);
+    PiConfigDialog dlg(cfg, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    addPi(dlg.config());
+    saveModules();
+    reportHardware();
+}
+
+void RackWindow::addModuleActions(QMenu* menu)
+{
+    for (int bytes : {1, 2, 4})
+        menu->addAction(tr("Digitaleingabe DE %1 stecken").arg(bytes * 8), this,
+                        [this, bytes] { addModuleOfKind(ModuleKind::DigitalIn, bytes); });
+    menu->addSeparator();
+    for (int bytes : {1, 2, 4})
+        menu->addAction(tr("Digitalausgabe DA %1 stecken").arg(bytes * 8), this,
+                        [this, bytes] { addModuleOfKind(ModuleKind::DigitalOut, bytes); });
+    menu->addSeparator();
+    menu->addAction(tr("Raspberry-Pi-E/A stecken …"), this, &RackWindow::addPiInteractive);
 }
 
 void RackWindow::showAddMenu(const QPoint& globalPos)
 {
     QMenu menu;
-    for (int bytes : {1, 2, 4})
-        menu.addAction(tr("Digitaleingabe DE %1").arg(bytes * 8), this,
-                       [this, bytes] { addModuleOfKind(ModuleKind::DigitalIn, bytes); });
-    menu.addSeparator();
-    for (int bytes : {1, 2, 4})
-        menu.addAction(tr("Digitalausgabe DA %1").arg(bytes * 8), this,
-                       [this, bytes] { addModuleOfKind(ModuleKind::DigitalOut, bytes); });
+    addModuleActions(&menu);
     menu.exec(globalPos);
 }
 
@@ -166,11 +217,27 @@ void RackWindow::addCpuActions(QMenu* menu)
     connect(menu, &QMenu::aboutToShow, this, fill);
 }
 
-void RackWindow::showModuleMenu(DigitalModule* m, const QPoint& globalPos)
+// ---------------------------------------------------------------- Kontextmenüs
+
+void RackWindow::showModuleMenu(ModuleWidget* m, const QPoint& globalPos)
+{
+    QMenu menu;
+    if (auto* d = qobject_cast<DigitalModule*>(m))
+        fillDigitalMenu(d, menu, globalPos);
+    else if (auto* p = qobject_cast<PiModule*>(m))
+        fillPiMenu(p, menu);
+    menu.addSeparator();
+    menu.addAction(tr("Nach links"), this, [this, m] { moveModule(m, -1); });
+    menu.addAction(tr("Nach rechts"), this, [this, m] { moveModule(m, +1); });
+    menu.addSeparator();
+    menu.addAction(tr("Baugruppe ziehen"), this, [this, m] { removeModule(m); });
+    menu.exec(globalPos);
+}
+
+void RackWindow::fillDigitalMenu(DigitalModule* m, QMenu& menu, const QPoint& globalPos)
 {
     const ModuleConfig cfg = m->config();
     const bool in = cfg.kind == ModuleKind::DigitalIn;
-    QMenu menu;
     if (in) {
         // Einzelner Eingang unter dem Mauszeiger
         const int idx = m->bitAt(m->mapFromGlobal(globalPos));
@@ -203,13 +270,24 @@ void RackWindow::showModuleMenu(DigitalModule* m, const QPoint& globalPos)
         c.address = a;
         m->setConfig(c);
         saveModules();
+        reportHardware();
     });
-    menu.addSeparator();
-    menu.addAction(tr("Nach links"), this, [this, m] { moveModule(m, -1); });
-    menu.addAction(tr("Nach rechts"), this, [this, m] { moveModule(m, +1); });
-    menu.addSeparator();
-    menu.addAction(tr("Baugruppe ziehen"), this, [this, m] { removeModule(m); });
-    menu.exec(globalPos);
+}
+
+void RackWindow::fillPiMenu(PiModule* m, QMenu& menu)
+{
+    menu.addAction(tr("Einstellungen …"), this, [this, m] { editPi(m); });
+    menu.addAction(tr("Verbindung neu aufbauen"), this, [m] { m->link()->reconnect(); });
+}
+
+void RackWindow::editPi(PiModule* m)
+{
+    PiConfigDialog dlg(m->config(), this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    m->setConfig(dlg.config());
+    relayout();     // Breite kann sich geändert haben
+    saveModules();
+    reportHardware();
 }
 
 void RackWindow::setMomentaryMask(DigitalModule* m, uint32_t mask)
@@ -225,19 +303,23 @@ void RackWindow::setMomentaryMask(DigitalModule* m, uint32_t mask)
     saveModules();
 }
 
-void RackWindow::removeModule(DigitalModule* m)
+void RackWindow::removeModule(ModuleWidget* m)
 {
-    const ModuleConfig c = m->config();
-    if (c.kind == ModuleKind::DigitalIn)    // gezogene Eingabe liefert 0-Signal
-        for (int b = 0; b < c.bytes; ++b)
-            for (int bit = 0; bit < 8; ++bit) plc_->cpu().setInput(c.address + b, bit, false);
+    if (auto* d = qobject_cast<DigitalModule*>(m)) {
+        const ModuleConfig c = d->config();
+        if (c.kind == ModuleKind::DigitalIn)    // gezogene Eingabe liefert 0-Signal
+            for (int b = 0; b < c.bytes; ++b)
+                for (int bit = 0; bit < 8; ++bit) plc_->cpu().setInput(c.address + b, bit, false);
+    }
+    // PiModule: der Destruktor meldet sich bei s5io ab (Ausgänge aus) und setzt die Eingänge auf 0
     modules_.erase(std::find(modules_.begin(), modules_.end(), m));
     m->deleteLater();
     relayout();
     saveModules();
+    reportHardware();
 }
 
-void RackWindow::moveModule(DigitalModule* m, int delta)
+void RackWindow::moveModule(ModuleWidget* m, int delta)
 {
     auto it = std::find(modules_.begin(), modules_.end(), m);
     const long idx = it - modules_.begin();
@@ -255,7 +337,7 @@ void RackWindow::relayout()
     layout_->addWidget(cpuModule_);
     cpuModule_->setSlot(1);
     int slot = 2;
-    for (DigitalModule* m : modules_) {
+    for (ModuleWidget* m : modules_) {
         layout_->addWidget(m);
         m->setSlot(slot++);
     }
@@ -263,16 +345,22 @@ void RackWindow::relayout()
     layout_->addStretch();
 }
 
+// ---------------------------------------------------------------- Speichern
+
 void RackWindow::saveModules() const
 {
     QStringList list;
-    for (const DigitalModule* m : modules_) {
-        const ModuleConfig& c = m->config();
-        list << QStringLiteral("%1,%2,%3,m:%4")
-                    .arg(c.kind == ModuleKind::DigitalIn ? QStringLiteral("DE") : QStringLiteral("DA"))
-                    .arg(c.bytes)
-                    .arg(c.address)
-                    .arg(c.momentaryMask & c.allBits(), 8, 16, QLatin1Char('0'));
+    for (const ModuleWidget* w : modules_) {
+        if (auto* d = qobject_cast<const DigitalModule*>(w)) {
+            const ModuleConfig& c = d->config();
+            list << QStringLiteral("%1,%2,%3,m:%4")
+                        .arg(c.kind == ModuleKind::DigitalIn ? QStringLiteral("DE") : QStringLiteral("DA"))
+                        .arg(c.bytes)
+                        .arg(c.address)
+                        .arg(c.momentaryMask & c.allBits(), 8, 16, QLatin1Char('0'));
+        } else if (auto* p = qobject_cast<const PiModule*>(w)) {
+            list << p->config().encode();
+        }
     }
     QSettings().setValue(QStringLiteral("rack/modules"), list);
 }
@@ -283,6 +371,11 @@ void RackWindow::restoreModules()
     QStringList list = s.value(QStringLiteral("rack/modules")).toStringList();
     if (!s.contains(QStringLiteral("rack/modules"))) list = {QStringLiteral("DE,2,0,0"), QStringLiteral("DA,2,0,0")};
     for (const QString& entry : list) {
+        if (entry.startsWith(QLatin1String("PI;"))) {
+            PiConfig pc;
+            if (PiConfig::decode(entry, pc)) addPi(pc);
+            continue;
+        }
         const QStringList f = entry.split(QLatin1Char(','));
         if (f.size() != 4) continue;
         ModuleConfig c;
@@ -296,15 +389,100 @@ void RackWindow::restoreModules()
         else
             c.momentaryMask = f[3] == QLatin1String("1") ? c.allBits() : 0;
         if (c.kind == ModuleKind::DigitalOut) c.momentaryMask = 0;
-        addModule(c);
+        addDigital(c);
     }
     relayout();
 }
 
+// ---------------------------------------------------------------- Zustand, Prüfung
+
 void RackWindow::refresh()
 {
+    bool fault = false;
+    for (ModuleWidget* m : modules_) {
+        m->update();
+        if (auto* p = qobject_cast<PiModule*>(m); p && !p->online()) fault = true;
+    }
+    cpuModule_->setPeripheryFault(fault);
     cpuModule_->update();
-    for (DigitalModule* m : modules_) m->update();
+}
+
+QStringList RackWindow::hardwareWarnings(const s5::Program& program) const
+{
+    std::vector<const PiModule*> pis;
+    for (const ModuleWidget* w : modules_)
+        if (auto* p = qobject_cast<const PiModule*>(w)) pis.push_back(p);
+    if (pis.empty()) return {};
+
+    // 0 = kein Pi zuständig, 1 = Pi zuständig, Bit nicht belegt, 2 = am Pi-Pin
+    auto bitState = [&](bool input, int byte, int bit) {
+        int best = 0;
+        for (const PiModule* p : pis) {
+            const PiConfig& c = p->config();
+            const int start = input ? c.inAddress : c.outAddress;
+            const int bytes = input ? c.inBytes : c.outBytes;
+            if (byte < start || byte >= start + bytes) continue;
+            const int ch = (byte - start) * 8 + bit;
+            best = std::max(best, (input ? c.inGpio[ch] : c.outGpio[ch]) >= 0 ? 2 : 1);
+        }
+        return best;
+    };
+
+    std::set<s5::Operand> operands;
+    for (const auto& [key, block] : program.blocks) {
+        for (const auto& ins : block.code) {
+            operands.insert(ins.operand);
+            for (const auto& a : ins.args) operands.insert(a);
+        }
+    }
+    QStringList screenOnly, unassigned;
+    for (const s5::Operand& o : operands) {
+        const QString name = QString::fromStdString(s5::toString(o));
+        switch (o.kind) {
+        case s5::OpKind::InputBit:
+        case s5::OpKind::OutputBit: {
+            const int st = bitState(o.kind == s5::OpKind::InputBit, o.address, o.bit);
+            if (st == 0) screenOnly << name;
+            if (st == 1) unassigned << name;
+            break;
+        }
+        case s5::OpKind::InputByte:
+        case s5::OpKind::OutputByte:
+        case s5::OpKind::InputWord:
+        case s5::OpKind::OutputWord: {
+            const bool input = o.kind == s5::OpKind::InputByte || o.kind == s5::OpKind::InputWord;
+            const bool word = o.kind == s5::OpKind::InputWord || o.kind == s5::OpKind::OutputWord;
+            int best = 0;
+            for (int b = 0; b < (word ? 2 : 1); ++b)
+                for (int bit = 0; bit < 8; ++bit) best = std::max(best, bitState(input, o.address + b, bit));
+            if (best == 0) screenOnly << name;
+            break;
+        }
+        default: break;
+        }
+    }
+
+    auto shortList = [](const QStringList& l) {
+        return l.size() <= 12 ? l.join(QStringLiteral(", ")) : l.mid(0, 12).join(QStringLiteral(", ")) + QStringLiteral(", …");
+    };
+    QStringList warnings;
+    if (!screenOnly.isEmpty())
+        warnings << tr("Nur auf dem Bildschirm, nicht am Raspberry Pi: %1").arg(shortList(screenOnly));
+    if (!unassigned.isEmpty())
+        warnings << tr("Auf der Raspberry-Pi-Baugruppe nicht belegt: %1").arg(shortList(unassigned));
+    return warnings;
+}
+
+void RackWindow::reportHardware()
+{
+    const QStringList w = hardwareWarnings(plc_->cpu().program());
+    if (!w.isEmpty()) statusBar()->showMessage(w.join(QStringLiteral(" · ")), 10000);
+}
+
+void RackWindow::shutdownPeripherals()
+{
+    for (ModuleWidget* m : modules_)
+        if (auto* p = qobject_cast<PiModule*>(m)) p->link()->stop();
 }
 
 void RackWindow::closeEvent(QCloseEvent* e)
@@ -316,6 +494,7 @@ void RackWindow::closeEvent(QCloseEvent* e)
     QSettings().setValue(QStringLiteral("rack/geometry"), saveGeometry());
     if (editor_->isVisible()) editor_->saveWindowState();
     saveModules();
+    shutdownPeripherals();
     e->accept();
     QApplication::quit();
 }

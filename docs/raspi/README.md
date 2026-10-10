@@ -4,13 +4,15 @@ Ziel: Die Ein- und Ausgänge des Simulators werden mit **echter Hardware** verbu
 liest 24-V-Eingänge über Optokoppler ein und schaltet über Optokoppler und Relais 24-V-Ausgänge –
 gesteuert von einem AWL-Programm in S5Sim.
 
-> **Stand:** Planung und Dokumentation. Die Software (`s5io` auf dem Pi, Pi-Baugruppe in S5Sim) ist noch
-> nicht umgesetzt.
+> **Stand:** Die Software ist umgesetzt: der Dienst `s5io` und die Baugruppe „Raspberry-Pi-E/A“ in S5Sim.
+> Auf dem Mac ist alles mit simulierten Pins getestet; der Test auf einem echten Pi steht noch aus
+> (siehe [Installation](installation.md)).
 
 ## Dokumente
 
 | Dokument | Inhalt |
 |---|---|
+| [installation.md](installation.md) | `s5io` auf dem Pi bauen, ausprobieren, als Dienst einrichten; Fehlersuche |
 | [plan.md](plan.md) | Aufbau, Protokoll, Sicherheitskonzept, Umsetzungsschritte |
 | [pinbelegung.md](pinbelegung.md) | Stiftleiste des Pi, vorgeschlagene Belegung für 8 Eingänge und 8 Ausgänge |
 | [optokoppler-platine.md](optokoppler-platine.md) | Bauanleitung: 24-V-Eingänge und -Ausgänge mit CNY17-3 |

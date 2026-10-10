@@ -1,11 +1,15 @@
 // Baugruppen im Stil der S5-115U: CPU mit Betriebsartenschalter, Digitalein- und -ausgabe.
 #pragma once
 
+#include "piconfig.h"
+
 #include <QWidget>
 
 #include <cstdint>
 
+class PiLink;
 class PlcController;
+class QTimer;
 
 namespace rack {
 
@@ -46,6 +50,7 @@ class CpuModule : public ModuleWidget {
 public:
     CpuModule(PlcController* plc, QWidget* parent = nullptr);
     void setFamilyName(const QString& name);
+    void setPeripheryFault(bool fault);     // z.B. Raspberry Pi nicht erreichbar → STÖRUNG leuchtet
 
 signals:
     void editorRequested();
@@ -63,6 +68,7 @@ private:
 
     PlcController* plc_;
     QString family_;
+    bool peripheryFault_ = false;
     bool resetDown_ = false;
     bool pgDown_ = false;
 };
@@ -89,6 +95,39 @@ private:
     PlcController* plc_;
     ModuleConfig cfg_;
     int pressed_ = -1;
+};
+
+// Raspberry-Pi-E/A: Ein- und Ausgänge an den GPIO-Pins eines Raspberry Pi (über den Dienst s5io)
+class PiModule : public ModuleWidget {
+    Q_OBJECT
+public:
+    PiModule(PlcController* plc, const PiConfig& cfg, QWidget* parent = nullptr);
+    ~PiModule() override;
+
+    const PiConfig& config() const { return cfg_; }
+    void setConfig(const PiConfig& cfg);
+    PiLink* link() const { return link_; }
+    bool online() const;
+    static int widthFor(const PiConfig& cfg);
+
+signals:
+    void statusChanged();
+
+protected:
+    bool event(QEvent* e) override;
+    void paintEvent(QPaintEvent*) override;
+
+private:
+    int columns() const { return cfg_.inBytes + cfg_.outBytes; }
+    QRect rowRect(int column, int bit) const;
+    void applyInputs(uint32_t mask);
+    void clearInputs();
+    void updateOutputs();
+
+    PlcController* plc_;
+    PiConfig cfg_;
+    PiLink* link_;
+    QTimer* outTimer_;
 };
 
 // Leerer Steckplatz mit "+" zum Stecken einer Baugruppe

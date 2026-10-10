@@ -56,40 +56,40 @@ Es sind bewusst **Warnungen**, keine Fehler: Gemischt mit virtuellen Karten zu t
 
 Die CPU wird **nicht** automatisch in STOP versetzt – das entscheidet der Bediener.
 
-## 3. Protokoll (Entwurf)
+## 3. Protokoll (Version 1)
 
 Textzeilen über TCP, Standardport **2511** (in Anlehnung an AS511), UTF-8, Zeilenende `\n`. Text statt
-Binärformat, damit man zur Fehlersuche mit `nc pi4.local 2511` mitlesen und von Hand senden kann.
+Binärformat, damit man zur Fehlersuche mit `nc raspberrypi.local 2511` mitlesen und von Hand senden kann.
+Umgesetzt in `s5io/protocol.h`.
 
 ```
+s5io → S5Sim   HELLO S5IO 1 MODEL="Raspberry Pi 4 Model B Rev 1.5" MODE=GPIO     (MODE=SIM bei --sim)
+s5io → S5Sim   PINS 2,3,4,…,27                                    (vorhandene GPIOs der Stiftleiste)
 S5Sim → s5io   HELLO S5SIM 1
-s5io → S5Sim   HELLO S5IO 1 MODEL="Raspberry Pi 4 Model B Rev 1.5"
-s5io → S5Sim   PINS 4,5,6,12,13,16,17,18,19,20,21,22,23,24,25,26,27      (frei verwendbare GPIOs)
-
-S5Sim → s5io   IN  0 GPIO=5  BIAS=DOWN INVERT=0 DEBOUNCE=10             (Kanal 0 = E 0.0)
-S5Sim → s5io   IN  1 GPIO=6  BIAS=DOWN INVERT=0 DEBOUNCE=10
-…
-S5Sim → s5io   OUT 0 GPIO=17                                             (Kanal 0 = A 0.0)
-…
+S5Sim → s5io   RESET                                              (Konfiguration verwerfen, Ausgänge aus)
+S5Sim → s5io   CFGIN 0 GPIO=5 BIAS=NONE INVERT=0 DEBOUNCE=10      (Kanal 0 = erstes Eingangsbit)
+S5Sim → s5io   CFGOUT 0 GPIO=17                                   (Kanal 0 = erstes Ausgangsbit)
 S5Sim → s5io   COMMIT
-s5io → S5Sim   OK                                 bzw.  ERR GPIO 17 ist bereits belegt
+s5io → S5Sim   OK                                 bzw.  ERR GPIO 17 ist doppelt belegt
 
-S5Sim → s5io   OUT 05                    Ausgangskanäle als Hex-Maske, bei Änderung, mind. alle 100 ms
-s5io → S5Sim   IN 81                     Eingangskanäle als Hex-Maske, bei Änderung, mind. alle 100 ms
-S5Sim → s5io   BYE
+S5Sim → s5io   OUT 5            Ausgangskanäle als Hex-Maske, bei Änderung, mind. alle 100 ms
+s5io → S5Sim   IN 81            Eingangskanäle als Hex-Maske, bei Änderung, mind. alle 100 ms
+S5Sim → s5io   BYE              abmelden – s5io schaltet die Ausgänge ab
 ```
 
-- Kanalnummer = Bitnummer innerhalb der Pi-Baugruppe (Byte·8 + Bit).
-- Bei `COMMIT` prüft `s5io`, ob alle Pins existieren und nicht doppelt belegt sind.
-- Das Format kann sich bei der Umsetzung noch ändern; es bekommt eine Versionsnummer (`1`).
+- Kanalnummer = Bitnummer innerhalb der Pi-Baugruppe (Byte·8 + Bit), höchstens 32 je Richtung.
+- `BIAS` = `NONE`, `UP` oder `DOWN`; `INVERT=1` kehrt den Eingang um; `DEBOUNCE` in ms (0 … 1000).
+- Bei `COMMIT` prüft `s5io`, ob alle Pins vorhanden und nicht doppelt belegt sind.
+- Watchdog: 500 ms ohne Nachricht von S5Sim → Ausgänge aus; S5Sim gilt nach 1,5 s ohne `IN` als getrennt.
+- Nur eine Verbindung gleichzeitig; eine zweite erhält `ERR … bereits verbunden`.
 
 ## 4. Umsetzung in Schritten
 
 | Schritt | Inhalt | Prüfung |
 |---|---|---|
-| 1 | E/A-Schnittstelle im Kern (`IoDevice`), Protokoll-Bibliothek, **simulierter `s5io`** auf dem Mac | Unit-Tests, S5Sim gegen simulierten Pi |
-| 2 | `s5io` für den Pi: libgpiod 2, Watchdog, Entprellung, systemd-Dienst, Installationsanleitung | auf deinem Pi: LED und Taster am Steckbrett |
-| 3 | Baugruppe „Raspberry-Pi-E/A“ im Baugruppenträger: Einstellungen, Darstellung, Verbindungs-LED, Warnungen | auf dem Mac gegen simulierten und echten Pi |
+| 1 ✅ | Protokoll-Bibliothek (`s5io/protocol`), **simulierter `s5io`** (`--sim`) | Tests `s5io_tests`; S5Sim gegen simulierten Pi |
+| 2 ✅ | `s5io` für den Pi: libgpiod 2, Watchdog, Entprellung, systemd-Dienst, [Installationsanleitung](installation.md) | auf dem Mac nur gegen die libgpiod-Header geprüft – **am Pi noch zu testen** |
+| 3 ✅ | Baugruppe „Raspberry-Pi-E/A“ im Baugruppenträger: Einstellungen, Darstellung, Verbindungs-LED, STÖRUNG, Warnungen | auf dem Mac gegen den simulierten Pi |
 | 4 | Optokoppler-Platine aufbauen und anschließen ([Bauanleitung](optokoppler-platine.md)) | mit 24-V-Netzteil, Taster, Relais |
 | 5 | Treiber „Parallelport-Platine“ für die [alte Platine](alte-parallelport-platine.md) (10 Eingänge über 74HC151, 16 Ausgänge über 4076B, nur 11 GPIOs); später MCP23017 | Platine mit Pegelwandler am Pi |
 | 6 (optional) | Pi als eigenständiges AG: CPU läuft auf dem Pi, S5Sim auf dem Mac ist nur noch PG und überträgt das Programm (MC5) | Programm übertragen, Mac trennen, Pi steuert weiter |

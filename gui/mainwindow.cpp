@@ -296,6 +296,13 @@ bool MainWindow::compile()
     const QString msg = tr("Übersetzt und geladen: %1 Bausteine, %2 Anweisungen").arg(blocks).arg(instr);
     messages_->addItem(msg);
     statusBar()->showMessage(msg, 5000);
+    if (hardwareCheck_) {
+        for (const QString& w : hardwareCheck_(r.program)) {
+            auto* item = new QListWidgetItem(tr("Hinweis: %1").arg(w));
+            item->setForeground(QColor(0xd0, 0x90, 0x10));
+            messages_->addItem(item);
+        }
+    }
     return true;
 }
 
@@ -626,6 +633,12 @@ MOT  :A 0.0</pre>
 </table>
 <p>Ein FB kann seine Formaloperanden an einen weiteren FB durchreichen (<code>X :=EIN</code>).
 Anzahl, Namen und Typen der Parameter werden beim Übersetzen geprüft.</p>
+
+<h3>Raspberry Pi</h3>
+<p>Die Baugruppe <i>Raspberry-Pi-E/A</i> (Baugruppenträger, Menü <i>Baugruppe</i>) verbindet Ein- und Ausgänge mit
+den GPIO-Pins eines Raspberry Pi, auf dem der Dienst <code>s5io</code> läuft. Pinbelegung, Pull-Widerstände und
+Invertierung werden in den Einstellungen der Baugruppe festgelegt. Beim Übersetzen weist S5Sim auf Ein- und
+Ausgänge hin, die nur auf dem Bildschirm existieren. Details: <code>docs/raspi</code>.</p>
 
 <h3>Maschinencode (MC5)</h3>
 <p>Die gesteckte CPU (S5-90U/95U, 100U, 115U, 135U/155U) wird am Baugruppenträger per Rechtsklick auf die CPU

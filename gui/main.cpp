@@ -1,9 +1,12 @@
 #include "mainwindow.h"
+#include "piconfigdialog.h"
 #include "plccontroller.h"
 #include "rackwindow.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QLibraryInfo>
+#include <QTranslator>
 #include <QTimer>
 
 int main(int argc, char* argv[])
@@ -13,6 +16,12 @@ int main(int argc, char* argv[])
     QApplication::setApplicationName(QStringLiteral("S5Sim"));
     QApplication::setApplicationVersion(QStringLiteral("0.2"));
     QApplication::setQuitOnLastWindowClosed(false);   // beendet wird über den Baugruppenträger
+
+    // deutsche Texte für Qts eigene Dialoge und Knöpfe ("Abbrechen" statt "Cancel")
+    QTranslator qtTranslator;
+    if (qtTranslator.load(QLocale(QLocale::German), QStringLiteral("qtbase"), QStringLiteral("_"),
+                          QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
+        QApplication::installTranslator(&qtTranslator);
 
     // Entwickleroptionen, z.B. für automatische Bildschirmfotos
     QCommandLineParser cli;
@@ -25,8 +34,9 @@ int main(int argc, char* argv[])
     QCommandLineOption mc5Opt(QStringLiteral("mc5"), QStringLiteral("Maschinencode-Ansicht zeigen"));
     QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("Baugruppenträger als PNG speichern und beenden"), QStringLiteral("datei"));
     QCommandLineOption shotEdOpt(QStringLiteral("screenshot-editor"), QStringLiteral("Editor als PNG speichern"), QStringLiteral("datei"));
+    QCommandLineOption shotPiOpt(QStringLiteral("screenshot-pidialog"), QStringLiteral("Einstellungsdialog der Pi-Baugruppe als PNG speichern"), QStringLiteral("datei"));
     QCommandLineOption delayOpt(QStringLiteral("delay"), QStringLiteral("Wartezeit vor dem Bildschirmfoto (ms)"), QStringLiteral("ms"), QStringLiteral("1500"));
-    cli.addOptions({exampleOpt, inputsOpt, runOpt, stepOpt, editorOpt, mc5Opt, shotOpt, shotEdOpt, delayOpt});
+    cli.addOptions({exampleOpt, inputsOpt, runOpt, stepOpt, editorOpt, mc5Opt, shotOpt, shotEdOpt, shotPiOpt, delayOpt});
     cli.process(app);
 
     PlcController plc;
@@ -43,6 +53,15 @@ int main(int argc, char* argv[])
     if (cli.isSet(mc5Opt)) editor.showMc5View();
     if (cli.isSet(runOpt)) plc.run();
     for (int i = 0; i < cli.value(stepOpt).toInt(); ++i) plc.step();
+    if (cli.isSet(shotPiOpt)) {
+        auto* dlg = new PiConfigDialog(PiConfig(), &rack);
+        dlg->show();
+        const QString file = cli.value(shotPiOpt);
+        QTimer::singleShot(cli.value(delayOpt).toInt(), dlg, [dlg, file] {
+            dlg->grab().save(file);
+            QApplication::quit();
+        });
+    }
     if (cli.isSet(shotOpt) || cli.isSet(shotEdOpt)) {
         const QString rackFile = cli.value(shotOpt), editorFile = cli.value(shotEdOpt);
         QTimer::singleShot(cli.value(delayOpt).toInt(), &rack, [&] {

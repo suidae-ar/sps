@@ -5,6 +5,9 @@
 #include "mc5.h"
 
 #include <QMainWindow>
+#include <QStringList>
+
+#include <functional>
 
 class CodeEditor;
 class Mc5View;
@@ -25,6 +28,9 @@ public:
     void showMc5View();
     bool maybeSave();
     void saveWindowState() const;
+
+    // Zusätzliche Prüfung beim Übersetzen (z.B. Ein-/Ausgänge ohne echten Raspberry-Pi-Pin)
+    void setHardwareCheck(std::function<QStringList(const s5::Program&)> check) { hardwareCheck_ = std::move(check); }
 
 signals:
     void showRackRequested();
@@ -71,6 +77,7 @@ private:
 
     QTimer* uiTimer_;
 
+    std::function<QStringList(const s5::Program&)> hardwareCheck_;
     QString currentFile_;
     int compiledRevision_ = -1;
 };
